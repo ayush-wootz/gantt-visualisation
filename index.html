@@ -1,0 +1,395 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Project Schedule</title>
+<style>
+  :root {
+    --bg: #0f1115;
+    --panel: #151821;
+    --text: #e5e7eb;
+    --text-dim: #9ca3af;
+    --text-faint: #6b7280;
+    --grid: #262a35;
+    --grid-strong: #374151;
+    --today: #ef4444;
+    --row-alt: #181b24;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0;
+    padding: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    font-size: 13px;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap {
+    padding: 16px;
+    min-height: 100vh;
+  }
+  .header {
+    margin-bottom: 12px;
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 16px;
+    flex-wrap: wrap;
+  }
+  .title {
+    font-size: 18px;
+    font-weight: 600;
+    color: var(--text);
+    margin: 0;
+    letter-spacing: -0.01em;
+  }
+  .subtitle {
+    font-size: 12px;
+    color: var(--text-dim);
+    margin-top: 2px;
+  }
+  .legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    align-items: center;
+  }
+  .legend-item {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 11px;
+    color: var(--text-dim);
+  }
+  .legend-swatch {
+    width: 10px;
+    height: 10px;
+    border-radius: 2px;
+    display: inline-block;
+  }
+  .chart-container {
+    overflow-x: auto;
+    background: var(--panel);
+    border-radius: 8px;
+    border: 1px solid var(--grid);
+  }
+  .empty, .error {
+    padding: 24px;
+    text-align: center;
+    color: var(--text-dim);
+    font-size: 13px;
+  }
+  .error {
+    color: #fca5a5;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 11px;
+    text-align: left;
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+  svg { display: block; }
+  svg text { font-family: inherit; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="header">
+    <div>
+      <h1 class="title">Project Schedule</h1>
+      <div class="subtitle" id="subtitle"></div>
+    </div>
+    <div class="legend" id="legend"></div>
+  </div>
+  <div class="chart-container" id="chart"></div>
+</div>
+
+<script>
+(function() {
+  const PHASE_COLORS = [
+    '#3b82f6', // blue
+    '#10b981', // green
+    '#f59e0b', // amber
+    '#8b5cf6', // violet
+    '#ef4444', // red
+    '#06b6d4', // cyan
+    '#ec4899', // pink
+    '#84cc16', // lime
+  ];
+
+  const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+
+  function fmtDate(d) {
+    return d.getUTCDate() + ' ' + MONTHS[d.getUTCMonth()];
+  }
+  function fmtDateFull(d) {
+    return d.getUTCDate() + ' ' + MONTHS[d.getUTCMonth()] + ' ' + d.getUTCFullYear();
+  }
+  function startOfUTCDay(d) {
+    return Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate());
+  }
+  function daysBetween(a, b) {
+    return Math.round((startOfUTCDay(b) - startOfUTCDay(a)) / 86400000);
+  }
+  function addDays(ms, n) {
+    const d = new Date(ms);
+    return Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate() + n);
+  }
+  function phaseColor(p) {
+    if (typeof p !== 'number' || isNaN(p)) p = 0;
+    const idx = ((Math.max(1, p) - 1) % PHASE_COLORS.length + PHASE_COLORS.length) % PHASE_COLORS.length;
+    return PHASE_COLORS[idx];
+  }
+
+  function showError(msg) {
+    document.getElementById('chart').innerHTML = '<div class="error">' + escapeHtml(msg) + '</div>';
+  }
+  function showEmpty(msg) {
+    document.getElementById('chart').innerHTML = '<div class="empty">' + escapeHtml(msg) + '</div>';
+  }
+  function escapeHtml(s) {
+    return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c]);
+  }
+  function escapeSvg(s) {
+    return String(s).replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'})[c]);
+  }
+  function truncate(s, max) {
+    if (s.length <= max) return s;
+    return s.slice(0, Math.max(1, max - 1)) + '…';
+  }
+
+  function readPayload() {
+    // Prefer hash, fall back to query string
+    let raw = '';
+    if (location.hash) {
+      const h = location.hash.replace(/^#/, '');
+      const m = h.match(/(?:^|&)data=([^&]+)/);
+      if (m) raw = decodeURIComponent(m[1]);
+      else raw = decodeURIComponent(h);
+    } else if (location.search) {
+      const params = new URLSearchParams(location.search);
+      raw = params.get('data') || '';
+    }
+    if (!raw) return null;
+    return raw;
+  }
+
+  function tryParse(raw) {
+    // Try base64 first, then plain JSON
+    let text = raw;
+    // Heuristic: if it doesn't start with [ or {, try base64
+    const trimmed = raw.trim();
+    if (trimmed[0] !== '[' && trimmed[0] !== '{') {
+      try {
+        // URL-safe base64 → standard base64
+        let b64 = trimmed.replace(/-/g, '+').replace(/_/g, '/');
+        while (b64.length % 4) b64 += '=';
+        text = decodeURIComponent(escape(atob(b64)));
+      } catch (e) {
+        text = trimmed;
+      }
+    }
+    // If wrapped as comma-joined objects without brackets, wrap them
+    const t2 = text.trim();
+    if (t2.startsWith('{') && t2.endsWith('}') && t2.includes('},')) {
+      text = '[' + t2 + ']';
+    }
+    return JSON.parse(text);
+  }
+
+  function normalize(arr) {
+    if (!Array.isArray(arr)) {
+      if (arr && typeof arr === 'object') arr = [arr];
+      else throw new Error('Input is not an array of processes');
+    }
+    return arr.map((p, i) => {
+      const name = p.Name || p.name || p.process || ('Process ' + (i + 1));
+      const sRaw = p['Start date'] || p.start_date || p.startDate || p.start;
+      const eRaw = p['End date'] || p.end_date || p.endDate || p.end;
+      const phaseRaw = p.Phase !== undefined ? p.Phase : (p.phase !== undefined ? p.phase : 1);
+      const phase = parseInt(phaseRaw, 10) || 1;
+      const sd = new Date(sRaw);
+      const ed = new Date(eRaw);
+      if (isNaN(sd.getTime()) || isNaN(ed.getTime())) {
+        throw new Error('Invalid date for process "' + name + '" (start="' + sRaw + '", end="' + eRaw + '")');
+      }
+      const start = startOfUTCDay(sd);
+      const endInclusive = startOfUTCDay(ed);
+      return {
+        name: String(name),
+        phase: phase,
+        start: start,
+        end: endInclusive, // inclusive day
+      };
+    });
+  }
+
+  function render(processes) {
+    // Sort by phase, then start
+    processes.sort((a, b) => (a.phase - b.phase) || (a.start - b.start) || a.name.localeCompare(b.name));
+
+    // Compute range
+    let minDay = Infinity, maxDay = -Infinity;
+    processes.forEach(p => {
+      if (p.start < minDay) minDay = p.start;
+      if (p.end > maxDay) maxDay = p.end;
+    });
+    const totalDays = daysBetween(new Date(minDay), new Date(maxDay)) + 1; // inclusive
+
+    // Subtitle
+    document.getElementById('subtitle').textContent =
+      fmtDate(new Date(minDay)) + ' – ' + fmtDateFull(new Date(maxDay)) +
+      '  ·  ' + totalDays + ' days  ·  ' + processes.length + ' processes';
+
+    // Legend
+    const phases = [...new Set(processes.map(p => p.phase))].sort((a, b) => a - b);
+    const legendEl = document.getElementById('legend');
+    legendEl.innerHTML = phases.map(ph =>
+      '<span class="legend-item"><span class="legend-swatch" style="background:' + phaseColor(ph) + '"></span>Phase ' + ph + '</span>'
+    ).join('');
+
+    // Tick interval
+    let tickEvery;
+    if (totalDays <= 14) tickEvery = 1;
+    else if (totalDays <= 30) tickEvery = 2;
+    else if (totalDays <= 60) tickEvery = 5;
+    else if (totalDays <= 120) tickEvery = 7;
+    else tickEvery = 14;
+
+    // Layout constants
+    const LABEL_W = 200;
+    const PAD_L = 12;
+    const PAD_R = 16;
+    const ROW_H = 36;
+    const BAR_H = 22;
+    const HEADER_H = 32;
+    const PAD_B = 16;
+
+    // Column width per day, with a minimum chart width
+    const minChartWidth = 640;
+    const idealDayW = Math.max(18, Math.floor(minChartWidth / totalDays));
+    const dayW = idealDayW;
+    const chartW = totalDays * dayW;
+    const svgW = LABEL_W + PAD_L + chartW + PAD_R;
+    const svgH = HEADER_H + processes.length * ROW_H + PAD_B;
+
+    const dayToX = (dayMs) => LABEL_W + PAD_L + daysBetween(new Date(minDay), new Date(dayMs)) * dayW;
+
+    let svg = '';
+    svg += '<svg width="' + svgW + '" height="' + svgH + '" viewBox="0 0 ' + svgW + ' ' + svgH + '" xmlns="http://www.w3.org/2000/svg">';
+
+    // Background rows (alternating bands per phase group)
+    let phaseRowStart = 0;
+    for (let i = 0; i < processes.length; i++) {
+      const inNewPhase = i > 0 && processes[i].phase !== processes[i - 1].phase;
+      if (inNewPhase || i === 0) {
+        // Phase divider line at top of new phase group (except first)
+        if (i > 0) {
+          const y = HEADER_H + i * ROW_H;
+          svg += '<line x1="0" y1="' + y + '" x2="' + svgW + '" y2="' + y + '" stroke="' + 'var(--grid-strong)' + '" stroke-width="1" />';
+        }
+      }
+      // Alternating row background
+      if (i % 2 === 1) {
+        svg += '<rect x="0" y="' + (HEADER_H + i * ROW_H) + '" width="' + svgW + '" height="' + ROW_H + '" fill="#181b24" />';
+      }
+    }
+
+    // Vertical gridlines + date labels
+    for (let d = 0; d < totalDays; d++) {
+      const dayMs = addDays(minDay, d);
+      const x = dayToX(dayMs);
+      if (d % tickEvery === 0) {
+        // Label
+        const dt = new Date(dayMs);
+        svg += '<text x="' + (x + 2) + '" y="' + 20 + '" font-size="11" fill="#9ca3af">' + escapeSvg(fmtDate(dt)) + '</text>';
+        // Gridline
+        svg += '<line x1="' + x + '" y1="' + HEADER_H + '" x2="' + x + '" y2="' + (svgH - PAD_B) + '" stroke="#262a35" stroke-width="1" />';
+      } else {
+        // Faint gridline
+        svg += '<line x1="' + x + '" y1="' + HEADER_H + '" x2="' + x + '" y2="' + (svgH - PAD_B) + '" stroke="#1d2030" stroke-width="1" />';
+      }
+    }
+    // Final right gridline
+    svg += '<line x1="' + (LABEL_W + PAD_L + chartW) + '" y1="' + HEADER_H + '" x2="' + (LABEL_W + PAD_L + chartW) + '" y2="' + (svgH - PAD_B) + '" stroke="#262a35" stroke-width="1" />';
+
+    // Separator between labels column and chart
+    svg += '<line x1="' + LABEL_W + '" y1="0" x2="' + LABEL_W + '" y2="' + svgH + '" stroke="#262a35" stroke-width="1" />';
+
+    // Header bottom border
+    svg += '<line x1="0" y1="' + HEADER_H + '" x2="' + svgW + '" y2="' + HEADER_H + '" stroke="#374151" stroke-width="1" />';
+
+    // Bars + name labels
+    processes.forEach((p, i) => {
+      const rowY = HEADER_H + i * ROW_H;
+      const barY = rowY + (ROW_H - BAR_H) / 2;
+      const x0 = dayToX(p.start);
+      const days = daysBetween(new Date(p.start), new Date(p.end)) + 1; // inclusive
+      const w = Math.max(dayW * 0.7, days * dayW - 2);
+      const color = phaseColor(p.phase);
+
+      // Name label (left column)
+      const labelText = truncate(p.name, 26);
+      svg += '<text x="' + (LABEL_W - 10) + '" y="' + (rowY + ROW_H / 2 + 4) + '" font-size="12" fill="#e5e7eb" text-anchor="end">' + escapeSvg(labelText) + '</text>';
+
+      // Bar
+      svg += '<rect x="' + x0 + '" y="' + barY + '" width="' + w + '" height="' + BAR_H + '" rx="4" ry="4" fill="' + color + '" />';
+
+      // Duration label
+      const durText = days + 'd';
+      if (w >= 30) {
+        svg += '<text x="' + (x0 + w / 2) + '" y="' + (barY + BAR_H / 2 + 4) + '" font-size="11" fill="#ffffff" text-anchor="middle" font-weight="600">' + durText + '</text>';
+      } else {
+        svg += '<text x="' + (x0 + w + 4) + '" y="' + (barY + BAR_H / 2 + 4) + '" font-size="11" fill="#9ca3af">' + durText + '</text>';
+      }
+    });
+
+    // Today marker
+    const now = new Date();
+    const todayMs = startOfUTCDay(now);
+    if (todayMs >= minDay && todayMs <= maxDay + 86400000) {
+      const x = dayToX(todayMs);
+      svg += '<line x1="' + x + '" y1="' + HEADER_H + '" x2="' + x + '" y2="' + (svgH - PAD_B) + '" stroke="#ef4444" stroke-width="1.5" stroke-dasharray="3,3" />';
+      svg += '<rect x="' + (x - 18) + '" y="' + (HEADER_H + 2) + '" width="36" height="14" rx="2" fill="#ef4444" />';
+      svg += '<text x="' + x + '" y="' + (HEADER_H + 12) + '" font-size="10" fill="#ffffff" text-anchor="middle" font-weight="600">Today</text>';
+    }
+
+    svg += '</svg>';
+
+    document.getElementById('chart').innerHTML = svg;
+  }
+
+  // Main
+  try {
+    const raw = readPayload();
+    if (!raw) {
+      showEmpty('No data. Append ?data=<json> or #data=<base64> to the URL.');
+      return;
+    }
+    let parsed;
+    try {
+      parsed = tryParse(raw);
+    } catch (e) {
+      showError('Could not parse input.\n\n' + e.message + '\n\nFirst 300 chars of input:\n' + raw.slice(0, 300));
+      return;
+    }
+    let processes;
+    try {
+      processes = normalize(parsed);
+    } catch (e) {
+      showError(e.message);
+      return;
+    }
+    if (processes.length === 0) {
+      showEmpty('No processes to display.');
+      return;
+    }
+    render(processes);
+  } catch (e) {
+    showError('Unexpected error: ' + e.message);
+  }
+})();
+</script>
+</body>
+</html>
