@@ -504,10 +504,11 @@
       }
       .gf-countdown-label { font-size: 12px; color: #9ca3af; }
       .gf-chart-wrap {
-        background: transparent;
-        border: none;
-        border-radius: 0;
+        background: #0e0e0e;
+        border: 1px solid #262626;
+        border-radius: 10px;
         overflow: hidden;
+        box-shadow: inset 0 1px 0 rgba(255,255,255,0.02);
       }
       .gf-svg { display: block; width: 100%; }
       .gf-pulse { /* blinking removed — static red is enough */ }
