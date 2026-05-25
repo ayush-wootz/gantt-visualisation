@@ -44,16 +44,13 @@ window.GanttData = (function () {
   // applied to bars (status drives bar color) — it is only kept for the
   // tiny optional accent on phase headers. Phases beyond the table fall
   // back to a generic entry from getPhase().
-  const PHASE_META_PRESET = {
-    1: { num: 1, name: 'Design',          color: '#6366f1' },
-    2: { num: 2, name: 'Procurement',     color: '#0ea5e9' },
-    3: { num: 3, name: 'Machining',       color: '#f59e0b' },
-    4: { num: 4, name: 'Treatment',       color: '#8b5cf6' },
-    5: { num: 5, name: 'Assembly',        color: '#10b981' },
-    6: { num: 6, name: 'QC & Dispatch',   color: '#d946ef' },
-  };
+  // Phase names are intentionally generic — bar color is driven by status,
+  // not by phase, so we only need a stable color per phase number for any
+  // future accent use. Display name is always "Phase N".
+  const PHASE_COLORS = ['#6366f1', '#0ea5e9', '#f59e0b', '#8b5cf6', '#10b981', '#d946ef', '#14b8a6', '#f43f5e'];
   function getPhase(num) {
-    return PHASE_META_PRESET[num] || { num, name: 'Phase ' + num, color: '#71717a' };
+    const color = PHASE_COLORS[(num - 1) % PHASE_COLORS.length] || '#71717a';
+    return { num, name: 'Phase ' + num, color };
   }
 
   // ───────────────────────────────── Mutable current state
