@@ -56,31 +56,25 @@
       upcoming: procs.filter(p => p.status === 'upcoming').length,
       overshoot: procs.filter(p => p.overshoots).length,
     };
-    const headlineColor = counts.overshoot > 0 ? C.delayed
-                       : D.slackDays >= 7 ? C.dispatch
-                       : D.slackDays >= 0 ? C.active
-                       : C.delayed;
+    // Countdown turns red ONLY when today is past the dispatch date.
+    // Schedule overshoots are still surfaced via the "past dispatch" chip
+    // and the per-bar striped overrun — the countdown itself stays calm.
+    const headlineColor = D.daysToDispatch < 0 ? C.delayed : '#fafafa';
 
     return e('div', { className: 'gantt-focus-root' },
       e(StyleBlock, null),
 
-      // ───── header
+      // ───── header — minimal, just the status chips + countdown
       e('div', { className: 'gf-header' },
-        e('div', { className: 'gf-header-left' },
-          e('div', { className: 'gf-eyebrow' }, 'MANUFACTURING JOB'),
-          e('div', { className: 'gf-title' }, 'Schedule'),
+        e('div', { className: 'gf-stat-row' },
+          counts.overshoot > 0 && e(StatChip, { num: counts.overshoot, label: 'past dispatch', tone: 'danger' }),
+          e(StatChip, { num: counts.active, label: 'in progress', tone: 'active' }),
+          e(StatChip, { num: counts.upcoming, label: 'upcoming', tone: 'upcoming' }),
+          e(StatChip, { num: counts.completed, label: 'done', tone: 'muted' }),
         ),
-        e('div', { className: 'gf-header-right' },
-          e('div', { className: 'gf-stat-row' },
-            counts.overshoot > 0 && e(StatChip, { num: counts.overshoot, label: 'past dispatch', tone: 'danger' }),
-            e(StatChip, { num: counts.active, label: 'in progress', tone: 'active' }),
-            e(StatChip, { num: counts.upcoming, label: 'upcoming', tone: 'upcoming' }),
-            e(StatChip, { num: counts.completed, label: 'done', tone: 'muted' }),
-          ),
-          e('div', { className: 'gf-countdown' },
-            e('span', { className: 'gf-countdown-num', style: { color: headlineColor } }, Math.abs(D.daysToDispatch)),
-            e('span', { className: 'gf-countdown-label' }, D.daysToDispatch >= 0 ? 'days to dispatch' : 'days past dispatch'),
-          ),
+        e('div', { className: 'gf-countdown' },
+          e('span', { className: 'gf-countdown-num', style: { color: headlineColor } }, Math.abs(D.daysToDispatch)),
+          e('span', { className: 'gf-countdown-label' }, D.daysToDispatch >= 0 ? 'days to dispatch' : 'days past dispatch'),
         ),
       ),
 
@@ -273,7 +267,7 @@
         e('text', { x: t.x, y: 36, fontSize: 11, fill: '#9ca3af', textAnchor: 'middle', fontWeight: 500 }, t.label),
         e('line', {
           x1: t.x, y1: TOP_PAD - 6, x2: t.x, y2: chartH - BOTTOM_PAD,
-          stroke: '#1d2030', strokeWidth: 1,
+          stroke: '#2a2a2a', strokeWidth: 1,
         }),
       )),
     );
@@ -285,13 +279,13 @@
       e('line', {
         x1: LEFT_PAD, y1: y + 0.5,
         x2: chartW - RIGHT_PAD, y2: y + 0.5,
-        stroke: '#1d2030', strokeWidth: 1,
+        stroke: '#2a2a2a', strokeWidth: 1,
       }),
       e('text', {
         x: LEFT_PAD, y: y + 20,
         fontSize: 10, fontWeight: 700, letterSpacing: 2,
         fill: '#71717a',
-      }, 'PHASE ' + phase.num + ' · ' + phase.name.toUpperCase()),
+      }, 'PHASE ' + phase.num),
     );
   }
 
@@ -482,26 +476,17 @@
     return e('style', null, `
       .gantt-focus-root {
         font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-        background: #0b0d12;
+        background: #171717;
         color: #e5e7eb;
-        min-height: 100vh;
-        padding: 28px 32px 40px;
+        padding: 18px 20px 20px;
         box-sizing: border-box;
       }
       .gf-header {
-        display: flex; justify-content: space-between; align-items: flex-end;
-        gap: 24px; flex-wrap: wrap; margin-bottom: 22px;
+        display: flex; justify-content: space-between; align-items: center;
+        gap: 20px; flex-wrap: wrap; margin-bottom: 16px;
       }
-      .gf-header-left { flex: 0 0 auto; }
-      .gf-header-right {
-        display: flex; flex-direction: column; align-items: flex-end; gap: 10px;
-        margin-left: auto;
-      }
-      .gf-eyebrow { font-size: 11px; letter-spacing: 2px; color: #6b7280; font-weight: 700; }
-      .gf-title { font-size: 28px; font-weight: 700; letter-spacing: -0.02em; color: #fafafa; margin-top: 4px; }
       .gf-stat-row {
         display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
-        justify-content: flex-end;
       }
       .gf-chip {
         display: inline-flex; align-items: center; gap: 6px;
@@ -514,12 +499,15 @@
       .gf-chip-pulse { /* blinking removed — static red is enough */ }
       .gf-countdown { display: inline-flex; align-items: baseline; gap: 8px; }
       .gf-countdown-num {
-        font-size: 36px; font-weight: 800; letter-spacing: -0.03em;
+        font-size: 30px; font-weight: 800; letter-spacing: -0.03em;
         font-variant-numeric: tabular-nums; line-height: 1;
       }
       .gf-countdown-label { font-size: 12px; color: #9ca3af; }
       .gf-chart-wrap {
-        background: #101318; border: 1px solid #1d2030; border-radius: 12px; overflow: hidden;
+        background: transparent;
+        border: none;
+        border-radius: 0;
+        overflow: hidden;
       }
       .gf-svg { display: block; width: 100%; }
       .gf-pulse { /* blinking removed — static red is enough */ }
