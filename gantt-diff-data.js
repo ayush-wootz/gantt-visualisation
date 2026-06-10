@@ -319,21 +319,35 @@ window.GanttDiffData = (function () {
     const diffMode = diffRequested && !!_candidate;
 
     const dispatchIso = (diffMode && _candidate.dispatchIso) || _approved.dispatchIso || (_candidate && _candidate.dispatchIso);
-    const apMap = new Map(_approved.processes.map(p => [p.key, p]));
-    const cdMap = _candidate ? new Map(_candidate.processes.map(p => [p.key, p])) : new Map();
+
+    // Match approved↔candidate by process_row_id first; if the two plans key
+    // differently (e.g. approved is a legacy string with no IDs, candidate has
+    // IDs), fall back to matching by normalized name so the diff still works.
+    const norm = (s) => String(s || '').trim().toLowerCase();
+    const apById = new Map(_approved.processes.map(p => [p.key, p]));
+    const apByName = new Map(_approved.processes.map(p => [norm(p.name), p]));
+    const cdById = _candidate ? new Map(_candidate.processes.map(p => [p.key, p])) : new Map();
+    const cdByName = _candidate ? new Map(_candidate.processes.map(p => [norm(p.name), p])) : new Map();
+
+    const matchApproved = (p) => apById.get(p.key) || apByName.get(norm(p.name)) || null;
+    const matchCandidateExists = (ap) => cdById.has(ap.key) || cdByName.has(norm(ap.name));
 
     const displayProcs = diffMode ? _candidate.processes : _approved.processes;
     const rows = [];
+    const matchedApprovedKeys = new Set();
 
     for (const p of displayProcs) {
-      const ap = apMap.get(p.key);
+      const ap = diffMode ? matchApproved(p) : null;
       let diffStatus = 'unchanged';
       let ghost = null;
       if (diffMode) {
         if (!ap) diffStatus = 'added';
-        else if (ap.startIso !== p.startIso || ap.endIso !== p.endIso) {
-          diffStatus = 'changed';
-          ghost = { start: toMs(ap.startIso), end: toMs(ap.endIso) };
+        else {
+          matchedApprovedKeys.add(ap.key);
+          if (ap.startIso !== p.startIso || ap.endIso !== p.endIso) {
+            diffStatus = 'changed';
+            ghost = { start: toMs(ap.startIso), end: toMs(ap.endIso) };
+          }
         }
       }
       rows.push({
@@ -345,7 +359,8 @@ window.GanttDiffData = (function () {
 
     if (diffMode) {
       for (const ap of _approved.processes) {
-        if (!cdMap.has(ap.key)) {
+        // Removed only if neither its id nor its name matched a candidate process
+        if (!matchedApprovedKeys.has(ap.key) && !matchCandidateExists(ap)) {
           rows.push({
             key: ap.key, name: ap.name, phase: ap.phase,
             start: toMs(ap.startIso), end: toMs(ap.endIso),
