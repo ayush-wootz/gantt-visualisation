@@ -72,6 +72,8 @@
     const procs = D.processes;
     const containerRef = React.useRef(null);
     const [width, setWidth] = React.useState(1200);
+    const [tip, setTip] = React.useState(null);   // { p, x, y } | null
+    const [pinned, setPinned] = React.useState(false);
 
     React.useEffect(() => {
       const ro = new ResizeObserver((entries) => {
@@ -113,8 +115,35 @@
     const todayX = dayToX(D.today);
     const dispatchX = dayToX(D.dispatch);
 
-    return e('div', { className: 'gd-chart-wrap', ref: containerRef },
-      e('svg', { width: chartW, height: chartH, viewBox: `0 0 ${chartW} ${chartH}`, className: 'gd-svg' },
+    const showTip = (p, evt) => {
+      if (pinned) return;
+      const wrap = containerRef.current;
+      if (!wrap) return;
+      const rect = wrap.getBoundingClientRect();
+      setTip({ p, x: evt.clientX - rect.left, y: evt.clientY - rect.top });
+    };
+    const moveTip = (evt) => {
+      if (pinned || !tip) return;
+      const wrap = containerRef.current;
+      if (!wrap) return;
+      const rect = wrap.getBoundingClientRect();
+      setTip(t => t && ({ ...t, x: evt.clientX - rect.left, y: evt.clientY - rect.top }));
+    };
+    const hideTip = () => { if (!pinned) setTip(null); };
+    const clickTip = (p, evt) => {
+      const wrap = containerRef.current;
+      if (!wrap) return;
+      const rect = wrap.getBoundingClientRect();
+      if (pinned && tip && tip.p.key === p.key) { setPinned(false); setTip(null); return; }
+      setPinned(true);
+      setTip({ p, x: evt.clientX - rect.left, y: evt.clientY - rect.top });
+    };
+
+    return e('div', { className: 'gd-chart-wrap', ref: containerRef, style: { position: 'relative' } },
+      e('svg', {
+        width: chartW, height: chartH, viewBox: `0 0 ${chartW} ${chartH}`, className: 'gd-svg',
+        onClick: (evt) => { if (pinned && evt.target.tagName === 'svg') { setPinned(false); setTip(null); } },
+      },
         e('defs', null,
           e('pattern', { id: 'gd-stripe', width: 6, height: 6, patternUnits: 'userSpaceOnUse', patternTransform: 'rotate(45)' },
             e('rect', { width: 6, height: 6, fill: 'rgba(239,68,68,0.22)' }),
@@ -147,7 +176,10 @@
 
         ...rows.map((r, i) => {
           if (r.kind === 'phase') return e(PhaseHeader, { key: 'ph' + i, y: r.y, phaseNum: r.phase, chartW });
-          return e(DiffBar, { key: r.p.key + '-' + i, p: r.p, y: r.y, rowH: r.rowH, dayToX, dayW, dispatchX, todayX });
+          return e(DiffBar, {
+            key: r.p.key + '-' + i, p: r.p, y: r.y, rowH: r.rowH, dayToX, dayW, dispatchX, todayX, chartW,
+            onEnter: showTip, onMove: moveTip, onLeave: hideTip, onClick: clickTip,
+          });
         }),
 
         e('g', null,
@@ -155,8 +187,49 @@
           e('line', { x1: todayX, y1: TOP_PAD - 4, x2: todayX, y2: chartH - BOTTOM_PAD + 4, stroke: '#ffffff', strokeWidth: 2 }),
           e('rect', { x: todayX - 46, y: 8, width: 92, height: 20, rx: 4, fill: '#ffffff' }),
           e('text', { x: todayX, y: 22, fontSize: 11, fontWeight: 800, fill: '#0b0d12', textAnchor: 'middle', letterSpacing: 0.5 },
-            'TODAY · ' + fmt(G.toMs ? D.today : D.today, { short: true }).toUpperCase()),
+            'TODAY · ' + fmt(D.today, { short: true }).toUpperCase()),
         ),
+      ),
+      tip && e(Tooltip, { tip, chartW, pinned }),
+    );
+  }
+
+  // ------------------------------------------------------------------------
+  function Tooltip({ tip, chartW, pinned }) {
+    const p = tip.p;
+    const W = 210;
+    let left = tip.x + 14;
+    if (left + W > chartW - 8) left = tip.x - W - 14;
+    if (left < 8) left = 8;
+    const top = Math.max(8, tip.y + 14);
+
+    const statusLabel = {
+      completed: 'Completed', active: 'In progress', upcoming: 'Upcoming',
+      overdue: 'Overdue', removed: 'Removed',
+    }[p.status] || p.status;
+    const statusColor = {
+      completed: '#86efac', active: '#fde68a', upcoming: '#d4d4d8',
+      overdue: '#fca5a5', removed: '#9ca3af',
+    }[p.status] || '#d4d4d8';
+
+    const rows = [];
+    rows.push(['Status', statusLabel, statusColor]);
+
+    if (p.ghost) {
+      rows.push(['Current', fmt(p.ghost.start, { short: true }) + ' → ' + fmt(p.ghost.end, { short: true }), '#9ca3af']);
+      rows.push(['Proposed', fmt(p.start, { short: true }) + ' → ' + fmt(p.end, { short: true }), '#fde68a']);
+    } else {
+      rows.push(['Start', fmt(p.start, { full: true }), '#e5e7eb']);
+      rows.push(['End', fmt(p.end, { full: true }), '#e5e7eb']);
+    }
+
+    return e('div', { className: 'gd-tip', style: { left, top, width: W } },
+      e('div', { className: 'gd-tip-title' }, p.name),
+      e('div', { className: 'gd-tip-rows' },
+        ...rows.map((r, i) => e('div', { key: i, className: 'gd-tip-row' },
+          e('span', { className: 'gd-tip-k' }, r[0]),
+          e('span', { className: 'gd-tip-v', style: { color: r[2] } }, r[1]),
+        )),
       ),
     );
   }
@@ -200,15 +273,27 @@
   }
 
   // ------------------------------------------------------------------------
-  function DiffBar({ p, y, rowH, dayToX, dayW, dispatchX, todayX }) {
+  function DiffBar({ p, y, rowH, dayToX, dayW, dispatchX, todayX, chartW, onEnter, onMove, onLeave, onClick }) {
     const xStart = dayToX(p.start);
     const xEnd = dayToX(p.end) + dayW * 0.5;
     const w = xEnd - xStart;
 
+    // Transparent full-row hit target — makes the whole row hoverable/clickable,
+    // not just the (sometimes thin) bar. Drawn first, under the visuals.
+    const hit = e('rect', {
+      key: 'hit', x: 0, y: y, width: chartW, height: rowH, fill: 'transparent',
+      style: { cursor: 'pointer' },
+      onMouseEnter: (ev) => onEnter && onEnter(p, ev),
+      onMouseMove: (ev) => onMove && onMove(ev),
+      onMouseLeave: () => onLeave && onLeave(),
+      onClick: (ev) => { ev.stopPropagation(); onClick && onClick(p, ev); },
+    });
+    const wrap = (...kids) => e('g', { className: 'gd-bar-row' }, hit, ...kids);
+
     // ───────── removed (diff mode only)
     if (p.diffStatus === 'removed') {
       const barY = y + (rowH - GHOST_H) / 2;
-      return e('g', { opacity: 0.5 },
+      return wrap(
         e('rect', { x: xStart, y: barY, width: w, height: GHOST_H, rx: 2, fill: C.ghost, opacity: 0.3 }),
         e('text', {
           x: xStart - 8, y: y + rowH / 2 + 4, fontSize: 11.5, fill: '#71717a',
@@ -269,7 +354,7 @@
 
     // ───────── completed — visible now: 12px solid bar, bright label
     if (isDone) {
-      return e('g', null,
+      return wrap(
         ...ghostEls,
         e('rect', { x: xStart, y: barY, width: w, height: barH, rx: 3, fill: C.completed, opacity: 0.75 }),
         e('text', { x: xStart - 6, y: rowMidY, fontSize: 11, fill: C.dispatch, textAnchor: 'end' }, '✓'),
@@ -289,7 +374,7 @@
 
     // ───────── upcoming
     if (p.status === 'upcoming') {
-      return e('g', null,
+      return wrap(
         ...ghostEls,
         onTimeW > 0 && e('rect', {
           x: xStart, y: barY, width: onTimeW, height: barH, rx: 4,
@@ -316,7 +401,7 @@
 
     // ───────── overdue: end has passed, completed flag is false
     if (p.status === 'overdue') {
-      return e('g', null,
+      return wrap(
         ...ghostEls,
         e('rect', {
           x: xStart, y: barY, width: w, height: barH, rx: 4,
@@ -353,7 +438,7 @@
     const activeRedStart = Math.max(redStart, remStart);
     const activeRedW = crossesDispatch ? Math.max(0, xEnd - activeRedStart) : 0;
 
-    return e('g', null,
+    return wrap(
       ...ghostEls,
       filledW > 0 && e('rect', { x: xStart, y: barY, width: filledW, height: barH, rx: 4, fill: C.active, filter: 'url(#gd-glow)' }),
       remOnTimeW > 0 && e('rect', {
@@ -397,6 +482,18 @@
         box-shadow: inset 0 1px 0 rgba(255,255,255,0.02);
       }
       .gd-svg { display: block; width: 100%; }
+      .gd-bar-row:hover { opacity: 0.96; }
+      .gd-tip {
+        position: absolute; z-index: 20; pointer-events: none;
+        background: #1c1c1c; border: 1px solid #3a3a3a;
+        border-radius: 8px; padding: 10px 12px;
+        box-shadow: 0 6px 20px rgba(0,0,0,0.45);
+      }
+      .gd-tip-title { font-size: 13px; font-weight: 700; color: #fafafa; margin-bottom: 8px; }
+      .gd-tip-rows { display: flex; flex-direction: column; gap: 4px; }
+      .gd-tip-row { display: flex; justify-content: space-between; gap: 14px; font-size: 12px; }
+      .gd-tip-k { color: #9ca3af; }
+      .gd-tip-v { font-weight: 600; font-variant-numeric: tabular-nums; text-align: right; }
     `);
   }
 
