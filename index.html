@@ -3,31 +3,20 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Project Schedule</title>
+<title>Plan Diff — Candidate vs Approved</title>
 <style>
   html, body { margin: 0; padding: 0; background: #171717; }
-  /* Background matches the host page (#171717) so the preview is faithful. */
   .gantt-load-error {
     font-family: ui-sans-serif, system-ui, -apple-system, sans-serif;
-    color: #fca5a5;
-    background: #0b0d12;
-    padding: 48px 32px;
-    max-width: 900px;
+    color: #fca5a5; background: #0b0d12;
+    padding: 48px 32px; max-width: 900px;
   }
-  .gantt-load-error h1 {
-    font-size: 18px; font-weight: 600; margin: 0 0 8px;
-    color: #fafafa;
-  }
+  .gantt-load-error h1 { font-size: 18px; font-weight: 600; margin: 0 0 8px; color: #fafafa; }
   .gantt-load-error pre {
-    background: #1a0e10;
-    border: 1px solid #5a1e22;
-    color: #fca5a5;
-    padding: 14px;
-    border-radius: 6px;
+    background: #1a0e10; border: 1px solid #5a1e22; color: #fca5a5;
+    padding: 14px; border-radius: 6px;
     font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-    font-size: 12px;
-    white-space: pre-wrap;
-    word-break: break-word;
+    font-size: 12px; white-space: pre-wrap; word-break: break-word;
   }
   .gantt-demo-ribbon {
     position: fixed; top: 12px; left: 12px; z-index: 50;
@@ -38,48 +27,38 @@
     border: 1px solid rgba(99,102,241,0.4);
   }
 </style>
-
-<!-- React + Babel (pinned). For production, swap to the .production.min builds. -->
-<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
-<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
-<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
-
-<!-- Data + URL parser -->
-<script src="gantt-data.js"></script>
-<!-- Renderer -->
-<script type="text/babel" src="gantt-focus.jsx"></script>
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" crossorigin="anonymous"></script>
+<script src="gantt-diff-data.js"></script>
+<script type="text/babel" src="gantt-diff.jsx"></script>
 </head>
 <body>
 <div id="root"></div>
-
 <script type="text/babel" data-presets="react">
 (function () {
-  const result = window.GanttData.loadFromUrl();
+  const result = window.GanttDiffData.loadFromUrl();
   const root = ReactDOM.createRoot(document.getElementById('root'));
-
   if (!result.ok) {
-    // Malformed URL data — show a developer-friendly error, same spirit as the
-    // original index.html's showError().
     root.render(
       <div className="gantt-load-error">
-        <h1>Could not parse schedule data</h1>
-        <pre>{window.GanttData.getError()}</pre>
+        <h1>Could not parse plan data</h1>
+        <pre>{window.GanttDiffData.getError()}</pre>
         <p style={{ fontSize: 12, color: '#9ca3af', marginTop: 16 }}>
-          Expected URL format:&nbsp;
-          <code>?data=&lt;dispatch&gt;, {'{'}process{'}'}, {'{'}process{'}'}, ...</code>
-          &nbsp;or base64 in <code>#data=…</code>.
+          Expected <code>#data=…</code> (base64 or raw): JSON&nbsp;
+          <code>{'{'}"approved": gantt_json, "candidate": gantt_json | null{'}'}</code>,
+          a single gantt_json, or the legacy <code>&lt;dispatch&gt;, {'{'}process{'}'}, …</code> string.
         </p>
       </div>
     );
     return;
   }
-
   root.render(
     <>
       {result.source === 'demo' && (
-        <div className="gantt-demo-ribbon">DEMO DATA — pass ?data=… to load real schedule</div>
+        <div className="gantt-demo-ribbon">DEMO DATA — pass #data=… to load real plans</div>
       )}
-      <GanttFocus />
+      <GanttDiff />
     </>
   );
 })();
