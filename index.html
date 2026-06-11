@@ -3,64 +3,188 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Plan Diff — Candidate vs Approved</title>
+<title>Thread</title>
 <style>
-  html, body { margin: 0; padding: 0; background: #171717; }
-  .gantt-load-error {
-    font-family: ui-sans-serif, system-ui, -apple-system, sans-serif;
-    color: #fca5a5; background: #0b0d12;
-    padding: 48px 32px; max-width: 900px;
-  }
-  .gantt-load-error h1 { font-size: 18px; font-weight: 600; margin: 0 0 8px; color: #fafafa; }
-  .gantt-load-error pre {
-    background: #1a0e10; border: 1px solid #5a1e22; color: #fca5a5;
-    padding: 14px; border-radius: 6px;
-    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-    font-size: 12px; white-space: pre-wrap; word-break: break-word;
-  }
-  .gantt-demo-ribbon {
-    position: fixed; top: 12px; left: 12px; z-index: 50;
-    font-family: ui-sans-serif, system-ui, -apple-system, sans-serif;
-    font-size: 10px; font-weight: 700; letter-spacing: 1.5px;
-    padding: 4px 10px; border-radius: 999px;
-    background: rgba(99,102,241,0.18); color: #c7d2fe;
-    border: 1px solid rgba(99,102,241,0.4);
-  }
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%;background:#141414;font-family:ui-sans-serif,system-ui,-apple-system,sans-serif;color:#e5e7eb}
+body{display:flex;flex-direction:column;overflow:hidden}
+#thread{flex:1;overflow-y:auto;display:flex;flex-direction:column;padding:12px 14px 8px;gap:10px}
+#thread::before{content:'';flex:1;min-height:0}
+#thread::-webkit-scrollbar{width:3px}
+#thread::-webkit-scrollbar-thumb{background:#333;border-radius:3px}
+.divider{display:flex;align-items:center;gap:8px;font-size:10px;color:#555;font-weight:600;letter-spacing:.5px;flex-shrink:0}
+.divider::before,.divider::after{content:'';flex:1;height:1px;background:#232323}
+.turn{display:flex;flex-direction:column;gap:4px;flex-shrink:0}
+.meta{font-size:10px;color:#6b7280;text-align:right;padding:0 2px}
+.user{background:#4A3D11;color:#b1924f;padding:9px 13px;border-radius:12px 12px 3px 12px;font-size:13px;line-height:1.5;align-self:flex-end;max-width:82%}
+.ai{background:#1c1c1c;border:1px solid #2a2a2a;color:#e5e7eb;padding:9px 13px;border-radius:12px 12px 12px 3px;font-size:13px;line-height:1.5;align-self:flex-start;max-width:82%}
+.warn{font-size:11px;color:#9ca3af;margin-top:6px;padding-top:6px;border-top:1px solid #2a2a2a;display:flex;flex-direction:column;gap:3px}
+.warn-item{display:flex;gap:5px}
+.warn-item::before{content:'⚠';font-size:10px;color:#f59e0b;flex-shrink:0;margin-top:1px}
+.approved{display:flex;justify-content:center;flex-shrink:0}
+.pill{font-size:11px;font-weight:500;color:#86efac;background:rgba(134,239,172,0.1);border:1px solid rgba(134,239,172,0.25);border-radius:999px;padding:4px 14px}
+.failed{background:#1c0a0a;border:1px solid #3a1a1a;color:#fca5a5;padding:9px 13px;border-radius:12px;font-size:12px;align-self:flex-start;max-width:82%}
+.empty{color:#6b7280;font-size:13px;text-align:center;margin:auto}
 </style>
-<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" crossorigin="anonymous"></script>
-<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" crossorigin="anonymous"></script>
-<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" crossorigin="anonymous"></script>
-<script src="gantt-diff-data.js"></script>
-<script type="text/babel" src="gantt-diff.jsx"></script>
 </head>
 <body>
-<div id="root"></div>
-<script type="text/babel" data-presets="react">
-(function () {
-  const result = window.GanttDiffData.loadFromUrl();
-  const root = ReactDOM.createRoot(document.getElementById('root'));
-  if (!result.ok) {
-    root.render(
-      <div className="gantt-load-error">
-        <h1>Could not parse plan data</h1>
-        <pre>{window.GanttDiffData.getError()}</pre>
-        <p style={{ fontSize: 12, color: '#9ca3af', marginTop: 16 }}>
-          Expected <code>#data=…</code> (base64 or raw): JSON&nbsp;
-          <code>{'{'}"approved": gantt_json, "candidate": gantt_json | null{'}'}</code>,
-          a single gantt_json, or the legacy <code>&lt;dispatch&gt;, {'{'}process{'}'}, …</code> string.
-        </p>
-      </div>
-    );
-    return;
+<div id="thread"></div>
+<script>
+(function(){
+
+  // ── parse the raw input ──────────────────────────────────────────────────
+  function readRaw(){
+    const hash=(location.hash||'').replace(/^#/,'');
+    const search=location.search||'';
+    let raw='';
+    const hm=hash.match(/(?:^|&)data=([^&]*)/);
+    if(hm) raw=decodeURIComponent(hm[1]);
+    else if(hash&&hash[0]!=='?') raw=decodeURIComponent(hash);
+    else { const p=new URLSearchParams(search); raw=p.get('data')||''; }
+    if(!raw) return null;
+    // try base64 decode
+    try {
+      let b64=raw.replace(/-/g,'+').replace(/_/g,'/');
+      while(b64.length%4) b64+='=';
+      const decoded=decodeURIComponent(escape(atob(b64)));
+      if(decoded[0]==='['||decoded[0]==='{') return decoded;
+    } catch(e){}
+    return raw;
   }
-  root.render(
-    <>
-      {result.source === 'demo' && (
-        <div className="gantt-demo-ribbon">DEMO DATA — pass #data=… to load real plans</div>
-      )}
-      <GanttDiff />
-    </>
-  );
+
+  // normalise whatever shape comes in into a clean turns array
+  function normalise(raw){
+    let data;
+    // sanitise literal newlines inside JSON strings before parsing
+    const sanitised=raw.replace(/\n/g,'\\n').replace(/\r/g,'');
+    const trimmed=sanitised.trim();
+    try {
+      data=JSON.parse(trimmed[0]==='['?trimmed:'['+trimmed+']');
+    } catch(e){
+      try { data=JSON.parse(trimmed); } catch(e2){ return []; }
+    }
+    if(!Array.isArray(data)) data=[data];
+
+    return data.map(row=>{
+      const rawSummary=(row.summary||'').replace(/^\[DRAFT\]\s*/,'').replace(/\\n/g,'\n').trim();
+      let summary=rawSummary, warnings=[];
+
+      const warnSplit=rawSummary.split(/\nAI warnings:\s*/);
+      if(warnSplit.length>1){
+        summary=warnSplit[0].trim();
+        warnings=warnSplit[1].split(/\s*\|\s*/).map(s=>s.trim()).filter(Boolean);
+      }
+
+      // detect approved rows (no message, summary starts with "Plan approved")
+      const isApproved=!row.message&&/plan approved/i.test(summary);
+      const isFailed=/^validation failed/i.test(summary);
+
+      // extract dispatch date from approved summary
+      let dispatch='';
+      if(isApproved){
+        const m=summary.match(/Dispatch:\s*([\d-]+)/i);
+        if(m) dispatch=m[1];
+      }
+
+      return { ts:row.ts, by:row.by, message:row.message||'',
+               summary:isApproved||isFailed?'':summary,
+               warnings, isApproved, isFailed, dispatch };
+    }).sort((a,b)=>new Date(a.ts)-new Date(b.ts));
+  }
+
+  // ── formatting helpers ───────────────────────────────────────────────────
+  function fmtDay(iso){
+    if(!iso) return '';
+    try{
+      const d=new Date(iso);
+      return d.getUTCDate()+' '+['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][d.getUTCMonth()];
+    }catch(e){return '';}
+  }
+  function fmtTime(iso){
+    if(!iso) return '';
+    try{
+      const d=new Date(iso);
+      return String(d.getUTCHours()).padStart(2,'0')+':'+String(d.getUTCMinutes()).padStart(2,'0');
+    }catch(e){return '';}
+  }
+
+  // ── render ───────────────────────────────────────────────────────────────
+  function render(turns){
+    const el=document.getElementById('thread');
+    if(!turns.length){
+      el.innerHTML='<div class="empty">No messages yet</div>';
+      return;
+    }
+
+    let lastDay='';
+    turns.forEach(t=>{
+      const day=fmtDay(t.ts);
+      if(day&&day!==lastDay){
+        lastDay=day;
+        const d=document.createElement('div');
+        d.className='divider'; d.textContent=day; el.appendChild(d);
+      }
+
+      if(t.isApproved){
+        const wrap=document.createElement('div');
+        wrap.className='approved';
+        const dispatch=t.dispatch?'· '+t.dispatch+' dispatch ':'';
+        wrap.innerHTML='<div class="pill">✓ Plan approved '+dispatch+'· '+fmtTime(t.ts)+'</div>';
+        el.appendChild(wrap); return;
+      }
+
+      const turn=document.createElement('div');
+      turn.className='turn';
+
+      const by=(t.by||'').replace(/@.*/,'');
+      const meta=document.createElement('div');
+      meta.className='meta';
+      meta.textContent=(by?by+' · ':'')+fmtTime(t.ts);
+      turn.appendChild(meta);
+
+      if(t.message){
+        const u=document.createElement('div');
+        u.className='user'; u.textContent=t.message;
+        turn.appendChild(u);
+      }
+
+      if(t.isFailed){
+        const f=document.createElement('div');
+        f.className='failed'; f.textContent='Could not apply — validation error. Try rephrasing.';
+        turn.appendChild(f);
+      } else if(t.summary){
+        const a=document.createElement('div');
+        a.className='ai'; a.textContent=t.summary;
+        if(t.warnings.length){
+          const w=document.createElement('div');
+          w.className='warn';
+          // dedupe warnings
+          [...new Set(t.warnings)].forEach(txt=>{
+            const wi=document.createElement('div');
+            wi.className='warn-item'; wi.textContent=txt;
+            w.appendChild(wi);
+          });
+          a.appendChild(w);
+        }
+        turn.appendChild(a);
+      }
+
+      el.appendChild(turn);
+    });
+
+    requestAnimationFrame(()=>{
+      requestAnimationFrame(()=>{ el.scrollTop = el.scrollHeight; });
+    });
+  }
+
+  // ── boot ─────────────────────────────────────────────────────────────────
+  try{
+    const raw=readRaw();
+    if(!raw){ render([]); return; }
+    render(normalise(raw));
+  }catch(e){
+    document.getElementById('thread').innerHTML='<div class="empty">Error: '+e.message+'</div>';
+  }
 })();
 </script>
 </body>
