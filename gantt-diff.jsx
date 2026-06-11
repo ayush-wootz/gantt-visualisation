@@ -73,7 +73,6 @@
     const containerRef = React.useRef(null);
     const [width, setWidth] = React.useState(1200);
     const [tip, setTip] = React.useState(null);   // { p, x, y } | null
-    const [pinned, setPinned] = React.useState(false);
 
     React.useEffect(() => {
       const ro = new ResizeObserver((entries) => {
@@ -115,34 +114,20 @@
     const todayX = dayToX(D.today);
     const dispatchX = dayToX(D.dispatch);
 
-    const showTip = (p, evt) => {
-      if (pinned) return;
-      const wrap = containerRef.current;
-      if (!wrap) return;
-      const rect = wrap.getBoundingClientRect();
-      setTip({ p, x: evt.clientX - rect.left, y: evt.clientY - rect.top });
-    };
-    const moveTip = (evt) => {
-      if (pinned || !tip) return;
-      const wrap = containerRef.current;
-      if (!wrap) return;
-      const rect = wrap.getBoundingClientRect();
-      setTip(t => t && ({ ...t, x: evt.clientX - rect.left, y: evt.clientY - rect.top }));
-    };
-    const hideTip = () => { if (!pinned) setTip(null); };
+    // Click-only: clicking a bar/label toggles its tooltip. Clicking the same
+    // one again, or the empty chart background, closes it.
     const clickTip = (p, evt) => {
       const wrap = containerRef.current;
       if (!wrap) return;
       const rect = wrap.getBoundingClientRect();
-      if (pinned && tip && tip.p.key === p.key) { setPinned(false); setTip(null); return; }
-      setPinned(true);
+      if (tip && tip.p.key === p.key) { setTip(null); return; }
       setTip({ p, x: evt.clientX - rect.left, y: evt.clientY - rect.top });
     };
 
     return e('div', { className: 'gd-chart-wrap', ref: containerRef, style: { position: 'relative' } },
       e('svg', {
         width: chartW, height: chartH, viewBox: `0 0 ${chartW} ${chartH}`, className: 'gd-svg',
-        onClick: (evt) => { if (pinned && evt.target.tagName === 'svg') { setPinned(false); setTip(null); } },
+        onClick: (evt) => { if (evt.target.tagName === 'svg') setTip(null); },
       },
         e('defs', null,
           e('pattern', { id: 'gd-stripe', width: 6, height: 6, patternUnits: 'userSpaceOnUse', patternTransform: 'rotate(45)' },
@@ -178,7 +163,7 @@
           if (r.kind === 'phase') return e(PhaseHeader, { key: 'ph' + i, y: r.y, phaseNum: r.phase, chartW });
           return e(DiffBar, {
             key: r.p.key + '-' + i, p: r.p, y: r.y, rowH: r.rowH, dayToX, dayW, dispatchX, todayX, chartW,
-            onEnter: showTip, onMove: moveTip, onLeave: hideTip, onClick: clickTip,
+            onClick: clickTip,
           });
         }),
 
@@ -190,12 +175,12 @@
             'TODAY · ' + fmt(D.today, { short: true }).toUpperCase()),
         ),
       ),
-      tip && e(Tooltip, { tip, chartW, pinned }),
+      tip && e(Tooltip, { tip, chartW }),
     );
   }
 
   // ------------------------------------------------------------------------
-  function Tooltip({ tip, chartW, pinned }) {
+  function Tooltip({ tip, chartW }) {
     const p = tip.p;
     const W = 210;
     let left = tip.x + 14;
@@ -273,22 +258,37 @@
   }
 
   // ------------------------------------------------------------------------
-  function DiffBar({ p, y, rowH, dayToX, dayW, dispatchX, todayX, chartW, onEnter, onMove, onLeave, onClick }) {
+  function DiffBar({ p, y, rowH, dayToX, dayW, dispatchX, todayX, chartW, onClick }) {
     const xStart = dayToX(p.start);
     const xEnd = dayToX(p.end) + dayW * 0.5;
     const w = xEnd - xStart;
 
-    // Transparent full-row hit target — makes the whole row hoverable/clickable,
-    // not just the (sometimes thin) bar. Drawn first, under the visuals.
-    const hit = e('rect', {
-      key: 'hit', x: 0, y: y, width: chartW, height: rowH, fill: 'transparent',
-      style: { cursor: 'pointer' },
-      onMouseEnter: (ev) => onEnter && onEnter(p, ev),
-      onMouseMove: (ev) => onMove && onMove(ev),
-      onMouseLeave: () => onLeave && onLeave(),
-      onClick: (ev) => { ev.stopPropagation(); onClick && onClick(p, ev); },
-    });
-    const wrap = (...kids) => e('g', { className: 'gd-bar-row' }, hit, ...kids);
+    // Hit targets: bar + label only, click-only (no hover).
+    // Computed per-branch below via makeHits(barXY) so the rect matches the
+    // actual bar, and a label rect matches where the process name is drawn.
+    const labelW = (txt) => String(txt || '').length * 7 + 8;  // rough text width
+    const clickHandler = (ev) => { ev.stopPropagation(); onClick && onClick(p, ev); };
+
+    // hitBar: transparent rect over the bar; hitLabel: rect over the name text.
+    const makeHits = (bx, by, bw_, bh, lblX, lblAnchor, lblTxt, lblY) => {
+      const hits = [];
+      // bar hit
+      hits.push(e('rect', {
+        key: 'hitbar', x: bx, y: by - 3, width: Math.max(bw_, 8), height: bh + 6,
+        fill: 'transparent', style: { cursor: 'pointer' }, onClick: clickHandler,
+      }));
+      // label hit — position depends on text anchor
+      if (lblTxt) {
+        const lw = labelW(lblTxt);
+        const lx = lblAnchor === 'end' ? lblX - lw : lblX;
+        hits.push(e('rect', {
+          key: 'hitlbl', x: lx, y: (lblY || by) - 11, width: lw, height: 18,
+          fill: 'transparent', style: { cursor: 'pointer' }, onClick: clickHandler,
+        }));
+      }
+      return hits;
+    };
+    const wrap = (...kids) => e('g', { className: 'gd-bar-row' }, ...kids);
 
     // ───────── removed (diff mode only)
     if (p.diffStatus === 'removed') {
@@ -300,6 +300,7 @@
           textAnchor: 'end', textDecoration: 'line-through',
         }, p.name),
         e('text', { x: xEnd + 8, y: y + rowH / 2 + 4, fontSize: 9, fontWeight: 700, fill: '#71717a', letterSpacing: 1 }, 'REMOVED'),
+        ...makeHits(xStart, barY, w, GHOST_H, xStart - 8, 'end', p.name, y + rowH / 2 + 4),
       );
     }
 
@@ -362,6 +363,7 @@
           x: xEnd + 8, y: rowMidY, fontSize: 12, fill: C.completedTx, fontWeight: 500, textAnchor: 'start',
         }, labelText),
         ...diffEls,
+        ...makeHits(xStart, barY, w, barH, xEnd + 8, 'start', labelText, rowMidY),
       );
     }
 
@@ -396,6 +398,7 @@
           }, p.overshootDays + ' DAY' + (p.overshootDays === 1 ? '' : 'S') + ' OVER'),
         ),
         ...diffEls,
+        ...makeHits(xStart, barY, w, barH, labelX, labelAnchor, labelText, rowMidY),
       );
     }
 
@@ -424,6 +427,7 @@
           }, p.overdueDays + ' DAY' + (p.overdueDays === 1 ? '' : 'S') + ' LATE'),
         ),
         ...diffEls,
+        ...makeHits(xStart, barY, w, barH, labelX, labelAnchor, labelText, rowMidY),
       );
     }
 
@@ -458,6 +462,7 @@
         fill: '#fffbeb', opacity: 0.85, textAnchor: 'end',
       }, Math.round(p.progress * 100) + '%'),
       ...diffEls,
+      ...makeHits(xStart, barY, w, barH, labelX, labelAnchor, labelText, rowMidY),
     );
   }
 
