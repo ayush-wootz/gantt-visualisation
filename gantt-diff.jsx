@@ -124,7 +124,10 @@
       setTip({ p, x: evt.clientX - rect.left, y: evt.clientY - rect.top });
     };
 
-    return e('div', { className: 'gd-chart-wrap', ref: containerRef, style: { position: 'relative' } },
+    return e('div', {
+      className: 'gd-chart-wrap' + (D.diffMode ? ' gd-pending' : ''),
+      ref: containerRef, style: { position: 'relative' }
+    },
       e('svg', {
         width: chartW, height: chartH, viewBox: `0 0 ${chartW} ${chartH}`, className: 'gd-svg',
         onClick: (evt) => { if (evt.target.tagName === 'svg') setTip(null); },
@@ -175,18 +178,36 @@
             'TODAY · ' + fmt(D.today, { short: true }).toUpperCase()),
         ),
       ),
-      tip && e(Tooltip, { tip, chartW }),
+      tip && e(Tooltip, { tip, chartW, chartH }),
     );
   }
 
   // ------------------------------------------------------------------------
-  function Tooltip({ tip, chartW }) {
+  function Tooltip({ tip, chartW, chartH }) {
     const p = tip.p;
     const W = 210;
-    let left = tip.x + 14;
-    if (left + W > chartW - 8) left = tip.x - W - 14;
+    const GAP = 14;       // distance from the click point
+    const EST_H = 96;     // approximate tooltip height for vertical flipping
+
+    // Which quadrant was clicked? Flip the popup to the diagonally opposite
+    // direction so it opens into empty space.
+    //   click top-left     → open bottom-right
+    //   click top-right    → open bottom-left
+    //   click bottom-left  → open top-right
+    //   click bottom-right → open top-left
+    const isLeft = tip.x < chartW / 2;
+    const isTop  = tip.y < chartH / 2;
+
+    // Horizontal: top/bottom-LEFT clicks open to the right; RIGHT clicks open left.
+    let left = isLeft ? tip.x + GAP : tip.x - W - GAP;
+    // Vertical: TOP clicks open downward; BOTTOM clicks open upward.
+    let top  = isTop  ? tip.y + GAP : tip.y - EST_H - GAP;
+
+    // Clamp inside the chart so it never spills off any edge.
+    if (left + W > chartW - 8) left = chartW - W - 8;
     if (left < 8) left = 8;
-    const top = Math.max(8, tip.y + 14);
+    if (top < 8) top = 8;
+    if (top + EST_H > chartH - 8) top = chartH - EST_H - 8;
 
     const statusLabel = {
       completed: 'Completed', active: 'In progress', upcoming: 'Upcoming',
@@ -485,6 +506,17 @@
         background: #0e0e0e; border: 1px solid #262626;
         border-radius: 10px; overflow: hidden;
         box-shadow: inset 0 1px 0 rgba(255,255,255,0.02);
+        transition: background 0.2s ease, border-color 0.2s ease;
+      }
+      /* Pending-approval (unapproved candidate) state — option 4: amber wash */
+      .gd-chart-wrap.gd-pending {
+        background:
+          linear-gradient(rgba(245,158,11,0.05), rgba(245,158,11,0.05)),
+          #1d1510;
+        border-color: rgba(245,158,11,0.35);
+        box-shadow:
+          inset 0 1px 0 rgba(255,255,255,0.02),
+          inset 0 0 0 1px rgba(245,158,11,0.06);
       }
       .gd-svg { display: block; width: 100%; }
       .gd-bar-row:hover { opacity: 0.96; }
