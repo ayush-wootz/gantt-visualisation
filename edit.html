@@ -1,0 +1,905 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Manufacturing Plan</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:#111;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;color:#e7e5e0;min-height:100vh}
+
+/* ── WRAPPER ── */
+.mp{background:#161513;border:0.5px solid #2a2825;overflow:hidden;min-height:100vh;display:flex;flex-direction:column}
+
+/* ── HEADER ── */
+.mp-top{display:flex;align-items:center;justify-content:space-between;padding:12px 16px;border-bottom:0.5px solid #2a2825;flex-wrap:wrap;gap:8px;flex-shrink:0}
+.mp-ttl{display:flex;align-items:center;gap:8px;font-size:14px;font-weight:500}
+.mp-ttl svg{opacity:.5}
+.pill{font-size:11px;padding:2px 9px;border-radius:20px;border:0.5px solid;font-weight:400}
+.pill.live{color:#5dcaa5;border-color:#1d9e75;background:#0a2018}
+.pill.cand{color:#fac775;border-color:#854f0b;background:#241a08}
+.hbtns{display:flex;gap:7px;align-items:center}
+.btn{font-size:12px;padding:5px 11px;border-radius:6px;border:0.5px solid #3a3835;background:#222019;color:#cfccc5;cursor:pointer;display:flex;align-items:center;gap:5px;white-space:nowrap}
+.btn:disabled{opacity:.38;cursor:default;pointer-events:none}
+.btn.amber{background:#2a1f0a;border-color:#854f0b;color:#fac775}
+.btn.green{background:#0a2018;border-color:#1d9e75;color:#5dcaa5}
+.btn svg{width:13px;height:13px}
+
+/* ── BANNER ── */
+.banner{display:flex;align-items:center;gap:8px;padding:8px 16px;font-size:11px;border-bottom:0.5px solid #2a2825;flex-shrink:0}
+.banner.edit{background:#1d1709;color:#fac775}
+.banner.load{background:#101a22;color:#85b7eb}
+
+/* ── CHART AREA ── */
+.cw{position:relative;padding:14px 16px 16px;flex:1}
+.days-left{text-align:right;font-size:11px;color:#8a877f;margin-bottom:6px}
+.axis{position:relative;height:16px;margin:0 0 12px 108px;font-size:11px;color:#6e6b65}
+.axis span{position:absolute;transform:translateX(-50%)}
+
+/* ── ROW ── */
+.row{display:flex;align-items:center;margin-bottom:12px}
+.rlab{width:98px;flex:none;font-size:11px;color:#b5b2ab;text-align:right;padding-right:10px;line-height:1.4}
+.rlab .ph{font-size:10px;color:#6e6b65;display:block}
+.track{flex:1;position:relative;height:26px}
+
+/* ── BAR ── */
+.bar{position:absolute;top:1px;height:24px;border-radius:5px;border:1px solid;font-size:11px;display:flex;align-items:center;gap:4px;padding:0 8px;cursor:pointer;white-space:nowrap;overflow:hidden;transition:filter .15s}
+.bar:hover{filter:brightness(1.15)}
+.bar.done{background:#0a2018;border-color:#1d9e75;color:#5dcaa5}
+.bar.todo{background:#1e1c19;border-color:#4a4845;color:#cfccc5}
+.bar.staged{background:#241a08;border-color:#ba7517;color:#fac775;border-style:dashed}
+.editing .bar.todo{border-style:dashed}
+.bar.locked{cursor:default}
+.bar.locked:hover{filter:none}
+
+/* dispatch line */
+.disp-line{position:absolute;top:0;bottom:0;width:1.5px;background:#1d9e75;pointer-events:none}
+
+/* ── POPOVER ── */
+.pop{position:absolute;z-index:20;width:208px;background:#1f1d1a;border:0.5px solid #3a3835;border-radius:9px;padding:11px;font-size:12px;box-shadow:0 8px 24px rgba(0,0,0,.5)}
+.pop-ttl{display:flex;justify-content:space-between;align-items:center;font-weight:500;font-size:13px;margin-bottom:8px;color:#e7e5e0;gap:6px}
+.pop-close{cursor:pointer;color:#6e6b65;font-size:16px;line-height:1;flex-shrink:0;padding:1px 3px}
+.prow{display:flex;justify-content:space-between;padding:2px 0;color:#b5b2ab}
+.prow b{color:#e7e5e0;font-weight:500}
+.prow b.green{color:#5dcaa5}
+.locked-note{font-size:10px;color:#8a877f;line-height:1.5;margin-top:6px;padding:6px 7px;background:#161513;border-radius:5px;border:0.5px solid #2a2825}
+.df{display:flex;align-items:center;gap:7px;background:#161513;border:0.5px solid #2a2825;border-radius:5px;padding:5px 8px;margin-top:6px}
+.df label{font-size:10px;color:#6e6b65;width:44px;flex:none}
+.df input[type=date]{flex:1;background:transparent;border:none;color:#e7e5e0;font-family:inherit;font-size:11px;outline:none;color-scheme:dark;min-width:0}
+.pnote{font-size:10px;margin-top:5px;line-height:1.5;padding:5px 7px;border-radius:5px}
+.pnote.ok{color:#5dcaa5;background:#071410}
+.pnote.warn{color:#fac775;background:#1a1206}
+.pnote.err{color:#f09595;background:#1a0a0a}
+.pbtn{width:100%;text-align:center;padding:6px;border-radius:5px;font-size:11px;cursor:pointer;border:0.5px solid #3a3835;margin-top:6px;background:#222019;color:#cfccc5;display:flex;align-items:center;justify-content:center;gap:5px}
+.pbtn:hover{background:#2a2825}
+.pbtn.g{background:#0a2018;border-color:#1d9e75;color:#5dcaa5}
+.pbtn.g:hover{background:#0f2c1e}
+.pbtn.a{background:#2a1f0a;border-color:#854f0b;color:#fac775}
+.pbtn.a:hover{background:#341f08}
+.pbtn svg{width:12px;height:12px}
+
+/* ── LOADER VEIL ── */
+.veil{position:absolute;inset:0;background:rgba(14,13,12,.78);z-index:30;display:none;align-items:center;justify-content:center}
+.vbox{display:flex;flex-direction:column;align-items:center;gap:10px;font-size:13px;color:#85b7eb;text-align:center}
+.vbox small{font-size:11px;color:#6e6b65}
+
+/* ── SPINNER ── */
+.spin{width:13px;height:13px;border:1.5px solid #28394a;border-top-color:#85b7eb;border-radius:50%;animation:sp .7s linear infinite;flex:none}
+@keyframes sp{to{transform:rotate(360deg)}}
+.spin-lg{width:22px;height:22px;border-width:2px;margin-bottom:4px}
+
+/* ── FOOTER ── */
+.foot{padding:9px 16px;border-top:0.5px solid #2a2825;font-size:11px;color:#8a877f;display:flex;flex-wrap:wrap;gap:6px;align-items:center;flex-shrink:0;min-height:36px}
+.chip{display:inline-flex;align-items:center;gap:4px;border:0.5px solid #3a3835;border-radius:12px;padding:2px 8px;font-size:10px;color:#cfccc5}
+
+/* ── SVG ICONS (inline, avoids external deps) ── */
+</style>
+</head>
+<body>
+<div class="mp" id="mp">
+
+  <!-- HEADER -->
+  <div class="mp-top">
+    <div class="mp-ttl">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M8 12v4M12 8v8M16 10v6"/></svg>
+      Manufacturing plan
+      <span class="pill live" id="pill">Live · approved</span>
+    </div>
+    <div class="hbtns">
+      <button class="btn" id="bCancel" style="display:none">Cancel</button>
+      <button class="btn amber" id="bSave" style="display:none" disabled>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12a9 9 0 1 0 18 0A9 9 0 0 0 3 12M12 8v4l3 3"/></svg>
+        Save &amp; regenerate
+      </button>
+      <button class="btn green" id="bApprove" style="display:none">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 13l4 4L19 7"/></svg>
+        Approve
+      </button>
+      <button class="btn" id="bEdit">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+        Edit
+      </button>
+    </div>
+  </div>
+
+  <!-- BANNERS -->
+  <div class="banner edit" id="banEdit" style="display:none">
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+    Edit mode — tap a bar to change dates. Completed processes are locked; reopen them first.
+  </div>
+  <div class="banner load" id="banLoad" style="display:none">
+    <div class="spin"></div>
+    <span id="loadMsg">Sending edits…</span>
+  </div>
+
+  <!-- CHART -->
+  <div class="cw" id="cw">
+    <div class="days-left" id="daysLeft"></div>
+    <div class="axis" id="axis"></div>
+    <div id="rows"></div>
+    <!-- LOADER VEIL -->
+    <div class="veil" id="veil">
+      <div class="vbox">
+        <div class="spin spin-lg"></div>
+        <span id="veilMsg">Regenerating plan…</span>
+        <small>This usually takes 10–20 seconds</small>
+      </div>
+    </div>
+  </div>
+
+  <!-- FOOTER -->
+  <div class="foot" id="foot">Tap a bar for details or to mark complete.</div>
+
+</div>
+
+<script>
+// ─────────────────────────────────────────────────────────────────
+// CONFIG — set these before deploying
+// ─────────────────────────────────────────────────────────────────
+var CONFIG = {
+  // Your FastAPI regenerate endpoint
+  SCHEDULE_URL: 'https://your-api.com/schedule',
+
+  // The secret header your FastAPI expects
+  SCHEDULE_SECRET: 'your-secret-here',
+
+  // Your FastAPI approve endpoint
+  APPROVE_URL: 'https://your-api.com/approve',
+
+  // Today's date override (leave '' to use real today)
+  TODAY_OVERRIDE: ''
+};
+
+// ─────────────────────────────────────────────────────────────────
+// STATE
+// ─────────────────────────────────────────────────────────────────
+var TODAY = CONFIG.TODAY_OVERRIDE || new Date().toISOString().slice(0, 10);
+var DISPATCH = '2026-06-30';
+
+// These come from the URL payload — see parsePayload()
+var META = {
+  assembly_row_id: '',
+  assembly_number: '',
+  project_number: '',
+  dispatch_date: DISPATCH,
+  planned_start_date: '',
+  generated_by: '',
+  draft_row_id: ''
+};
+
+// Working copy of processes — mutated on approve
+var procs = [];
+
+// Staged edits: { [id]: { start?, end? } }
+var edits = {};
+
+// 'view' | 'edit' | 'loading'
+var mode = 'view';
+
+// Currently open popover DOM element
+var activePop = null;
+
+// ─────────────────────────────────────────────────────────────────
+// URL PAYLOAD PARSING
+// ─────────────────────────────────────────────────────────────────
+function parsePayload() {
+  /*
+    Expected base64 JSON in #data= or ?data= :
+    {
+      "approved": { gantt_json object },   // live plan
+      "candidate": { gantt_json object },  // draft plan (null/absent = no draft)
+      "meta": {
+        "assembly_row_id": "...",
+        "assembly_number": "...",
+        "project_number": "...",
+        "dispatch_date": "YYYY-MM-DD",
+        "planned_start_date": "YYYY-MM-DD",
+        "generated_by": "user@email.com",
+        "draft_row_id": "..."              // empty if no draft exists
+      }
+    }
+
+    The gantt_json.items array shape (from your existing /schedule endpoint):
+    items: [{
+      phase_number: "1",
+      start: "YYYY-MM-DD",
+      end: "YYYY-MM-DD",
+      processes: [{
+        process_row_id: "...",
+        label: "Laser cutting",     // or process_name or name
+        start: "YYYY-MM-DD",        // or start_date
+        end: "YYYY-MM-DD",          // or end_date
+        is_completed: false,
+        completed_on: null          // YYYY-MM-DD or null
+      }]
+    }]
+  */
+  try {
+    var hash = window.location.hash.replace(/^#/, '');
+    var search = window.location.search.replace(/^\?/, '');
+    var raw = '';
+    var params = (hash || search).split('&');
+    for (var i = 0; i < params.length; i++) {
+      var kv = params[i].split('=');
+      if (kv[0] === 'data') { raw = decodeURIComponent(kv.slice(1).join('=')); break; }
+    }
+    if (!raw) return false;
+    var json = JSON.parse(atob(raw));
+
+    // Merge meta
+    if (json.meta) {
+      Object.keys(json.meta).forEach(function(k) { if (k in META) META[k] = json.meta[k]; });
+    }
+    if (json.meta && json.meta.dispatch_date) DISPATCH = json.meta.dispatch_date;
+
+    // Load processes from candidate (pending) or approved (live)
+    var source = json.candidate || json.approved;
+    if (!source || !source.items) return false;
+
+    procs = [];
+    source.items.forEach(function(phase) {
+      (phase.processes || []).forEach(function(p) {
+        procs.push({
+          id: p.process_row_id || p.id,
+          ph: 'P' + phase.phase_number,
+          name: p.label || p.process_name || p.name || 'Process',
+          start: p.start || p.start_date,
+          end: p.end || p.end_date,
+          done: !!(p.is_completed || p.completed),
+          completedOn: p.completed_on || (p.is_completed ? (p.end || p.end_date) : null),
+          // original values for tracking changes
+          orig_start: p.start || p.start_date,
+          orig_end: p.end || p.end_date,
+          // full row data needed for regenerate payload
+          phase_number: String(phase.phase_number),
+          ai_duration_days: p.ai_duration_days || daysBetween(p.start || p.start_date, p.end || p.end_date)
+        });
+      });
+    });
+
+    // If candidate exists, show pill as candidate
+    if (json.candidate) {
+      setPill('cand');
+      show('bApprove');
+      hide('bEdit');
+    }
+
+    return procs.length > 0;
+  } catch (e) {
+    console.warn('Gantt payload parse error:', e);
+    return false;
+  }
+}
+
+function loadDemoData() {
+  procs = [
+    { id: 'p1', ph: 'P1', name: 'Laser cutting',  start: '2026-06-10', end: '2026-06-12', done: true,  completedOn: '2026-06-12', orig_start: '2026-06-10', orig_end: '2026-06-12', phase_number: '1', ai_duration_days: 3 },
+    { id: 'p2', ph: 'P2', name: 'Bending CNC',    start: '2026-06-15', end: '2026-06-18', done: false, completedOn: null,          orig_start: '2026-06-15', orig_end: '2026-06-18', phase_number: '2', ai_duration_days: 4 },
+    { id: 'p3', ph: 'P3', name: 'TIG Welding',    start: '2026-06-19', end: '2026-06-23', done: false, completedOn: null,          orig_start: '2026-06-19', orig_end: '2026-06-23', phase_number: '3', ai_duration_days: 5 }
+  ];
+}
+
+// ─────────────────────────────────────────────────────────────────
+// DATE HELPERS
+// ─────────────────────────────────────────────────────────────────
+function D(s) { return new Date(s + 'T00:00:00'); }
+function fmt(s) { var d = D(s); return d.getDate() + ' ' + ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][d.getMonth()]; }
+function daysBetween(a, b) { return Math.round((D(b) - D(a)) / 86400000) + 1; }
+function addDays(s, n) { var d = D(s); d.setDate(d.getDate() + n); return d.toISOString().slice(0, 10); }
+
+// ─────────────────────────────────────────────────────────────────
+// CHART RANGE
+// ─────────────────────────────────────────────────────────────────
+var AX_START = '2026-06-08';
+var AX_END   = '2026-07-02';
+
+function pct(dateStr) {
+  return (D(dateStr) - D(AX_START)) / (D(AX_END) - D(AX_START)) * 100;
+}
+
+// ─────────────────────────────────────────────────────────────────
+// DOM HELPERS
+// ─────────────────────────────────────────────────────────────────
+function $(id) { return document.getElementById(id); }
+function show(id) { var el = $(id); if (el) el.style.display = ''; }
+function hide(id) { var el = $(id); if (el) el.style.display = 'none'; }
+function setPill(type) {
+  var el = $('pill');
+  el.className = 'pill ' + type;
+  el.textContent = type === 'live' ? 'Live · approved' : 'Candidate · pending approval';
+}
+
+// ─────────────────────────────────────────────────────────────────
+// POPOVER MANAGEMENT
+// ─────────────────────────────────────────────────────────────────
+function killPop() {
+  if (activePop) { activePop.remove(); activePop = null; }
+}
+
+function placePop(el, barLeftPct, rowEl, rowIdx) {
+  var cw = $('cw');
+  cw.appendChild(el);
+
+  var cwW = cw.offsetWidth;
+  var trackW = cwW - 108; // 108px = label width
+  var POP_W = 208;
+  var POP_H = el.offsetHeight || 200;
+
+  // Horizontal: start at bar position, flip left if clips right edge
+  var barXpx = 108 + trackW * barLeftPct / 100;
+  var left = barXpx;
+  if (left + POP_W > cwW - 10) left = barXpx - POP_W - 4;
+  if (left < 6) left = 6;
+
+  // Vertical: below the bar normally, flip above for bottom rows
+  var rowTop = rowEl.offsetTop;
+  var isBottomHalf = rowIdx >= Math.ceil(procs.length / 2);
+  var top = isBottomHalf ? rowTop - POP_H - 6 : rowTop + 30;
+  if (top < 4) top = rowTop + 30; // safety fallback
+
+  el.style.left = left + 'px';
+  el.style.top = top + 'px';
+
+  // Expand bottom padding if popover would clip
+  var neededBottom = top + POP_H + 10;
+  if (neededBottom > cw.scrollHeight) {
+    cw.style.paddingBottom = (neededBottom - cw.offsetHeight + 20) + 'px';
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────
+// RENDER
+// ─────────────────────────────────────────────────────────────────
+function renderAxis() {
+  var el = $('axis');
+  el.innerHTML = '';
+  ['2026-06-10','2026-06-15','2026-06-20','2026-06-25','2026-06-30'].forEach(function(d, i) {
+    var s = document.createElement('span');
+    s.style.left = pct(d) + '%';
+    if (d === DISPATCH) {
+      s.style.color = '#5dcaa5';
+      s.textContent = '30 Jun';
+    } else {
+      s.textContent = i === 0 ? '10 Jun' : '' + D(d).getDate();
+    }
+    el.appendChild(s);
+  });
+}
+
+function render() {
+  killPop();
+  var r = $('rows');
+  r.innerHTML = '';
+  $('daysLeft').textContent = (daysBetween(TODAY, DISPATCH) - 1) + ' days to dispatch';
+
+  procs.forEach(function(p, idx) {
+    var staged = edits[p.id];
+    var startD = (staged && staged.start) || p.start;
+    var endD   = (staged && staged.end)   || p.end;
+    var L = pct(startD);
+    var W = Math.max(pct(addDays(endD, 1)) - L, 5);
+
+    var row = document.createElement('div');
+    row.className = 'row';
+
+    // Label
+    var lab = document.createElement('div');
+    lab.className = 'rlab';
+    lab.innerHTML = '<span class="ph">' + p.ph + '</span>' + p.name;
+
+    // Track
+    var tr = document.createElement('div');
+    tr.className = 'track';
+
+    // Bar
+    var bar = document.createElement('div');
+    var barClass = p.done ? 'done' : (staged ? 'staged' : 'todo');
+    if (p.done && mode === 'edit') barClass += ' locked';
+    bar.className = 'bar ' + barClass;
+    bar.style.left = L + '%';
+    bar.style.width = W + '%';
+
+    var checkSvg = '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="flex-shrink:0"><path d="M5 13l4 4L19 7"/></svg>';
+    var pencilSvg = '<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="flex-shrink:0;opacity:.7"><path d="M12 20h9M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>';
+    bar.innerHTML = (p.done ? checkSvg : '') + p.name + (staged ? pencilSvg : '');
+    bar.setAttribute('aria-label', p.name + (p.done ? ' (completed)' : ''));
+
+    bar.addEventListener('click', function(e) {
+      e.stopPropagation();
+      if (mode === 'loading') return;
+      openPop(p, row, L, idx);
+    });
+
+    // Dispatch line
+    var dl = document.createElement('div');
+    dl.className = 'disp-line';
+    dl.style.left = pct(DISPATCH) + '%';
+
+    tr.appendChild(bar);
+    tr.appendChild(dl);
+    row.appendChild(lab);
+    row.appendChild(tr);
+    r.appendChild(row);
+  });
+
+  chrome();
+}
+
+function chrome() {
+  var n = Object.keys(edits).length;
+
+  $('bEdit').style.display   = (mode === 'view' && $('pill').className.indexOf('cand') < 0) ? '' : 'none';
+  $('bCancel').style.display = mode === 'edit' ? '' : 'none';
+  $('bSave').style.display   = mode === 'edit' ? '' : 'none';
+  $('bSave').disabled        = n === 0;
+  $('banEdit').style.display = mode === 'edit' ? '' : 'none';
+
+  // Save button label
+  $('bSave').innerHTML = '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12a9 9 0 1 0 18 0A9 9 0 0 0 3 12M12 8v4l3 3"/></svg> Save &amp; regenerate' + (n ? ' (' + n + ')' : '');
+
+  // Footer
+  var f = $('foot');
+  if (mode === 'edit') {
+    if (n === 0) { f.textContent = 'No edits yet. Tap a bar to change dates.'; return; }
+    f.innerHTML = '';
+    Object.keys(edits).forEach(function(id) {
+      var p = procs.find(function(x) { return x.id === id; });
+      var e = edits[id], bits = [];
+      if (e.start && e.start !== p.orig_start) bits.push('start → ' + fmt(e.start));
+      if (e.end   && e.end   !== p.orig_end)   bits.push('end → '   + fmt(e.end));
+      if (!bits.length) bits.push('date edited');
+      var c = document.createElement('span');
+      c.className = 'chip';
+      c.textContent = p.name + ': ' + bits.join(', ');
+      f.appendChild(c);
+    });
+    var note = document.createElement('span');
+    note.style.cssText = 'font-size:10px;color:#6e6b65;margin-left:4px';
+    note.textContent = 'Date edits will regenerate as a candidate.';
+    f.appendChild(note);
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────
+// POPOVERS
+// ─────────────────────────────────────────────────────────────────
+function openPop(p, rowEl, barLeftPct, idx) {
+  killPop();
+  var pop = document.createElement('div');
+  pop.className = 'pop';
+  activePop = pop;
+
+  if (mode === 'view') {
+    if (p.done) {
+      renderViewCompletedPop(pop, p);
+    } else {
+      renderViewIncompletePop(pop, p);
+    }
+  } else if (mode === 'edit') {
+    if (p.done) {
+      renderEditLockedPop(pop, p);
+    } else {
+      renderEditDatesPop(pop, p);
+    }
+  }
+
+  pop.addEventListener('click', function(e) { e.stopPropagation(); });
+  placePop(pop, barLeftPct, rowEl, idx);
+}
+
+// VIEW MODE — completed process
+function renderViewCompletedPop(pop, p) {
+  pop.innerHTML = '<div class="pop-ttl">'
+    + p.name
+    + ' <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#5dcaa5" stroke-width="2.5"><path d="M5 13l4 4L19 7"/></svg>'
+    + '<span class="pop-close" id="px">×</span></div>'
+    + '<div class="prow"><span>Planned</span><b>' + fmt(p.start) + ' – ' + fmt(p.end) + '</b></div>'
+    + '<div class="prow"><span>Completed on</span><b class="green">' + fmt(p.completedOn) + '</b></div>'
+    + '<div class="locked-note"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="display:inline-block;vertical-align:-2px;margin-right:4px"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>Dates are locked. Reopen the process first to edit dates.</div>'
+    + '<div class="pbtn" id="bReopen">Reopen process</div>';
+
+  pop.querySelector('#px').onclick = killPop;
+  pop.querySelector('#bReopen').onclick = function() { doReopen(p); };
+}
+
+// VIEW MODE — incomplete process
+function renderViewIncompletePop(pop, p) {
+  var completedNote = '';
+  pop.innerHTML = '<div class="pop-ttl">' + p.name + '<span class="pop-close" id="px">×</span></div>'
+    + '<div class="prow"><span>Start</span><b>' + fmt(p.start) + '</b></div>'
+    + '<div class="prow"><span>End</span><b>' + fmt(p.end) + '</b></div>'
+    + '<div class="prow"><span>Duration</span><b>' + daysBetween(p.start, p.end) + ' days</b></div>'
+    + '<div class="pbtn g" id="bShowComplete"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 13l4 4L19 7"/></svg> Mark complete</div>'
+    + '<div id="cBox" style="display:none">'
+    +   '<div class="df"><label>Done on</label><input type="date" id="doneDate" value="' + TODAY + '" max="' + TODAY + '"></div>'
+    +   '<div class="pnote ok" id="cNote"></div>'
+    +   '<div class="pbtn g" id="bConfirmComplete">Confirm completion</div>'
+    + '</div>'
+    + '<div class="pbtn" id="bGoEdit"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg> Edit dates</div>';
+
+  pop.querySelector('#px').onclick = killPop;
+
+  pop.querySelector('#bShowComplete').onclick = function() {
+    pop.querySelector('#cBox').style.display = 'block';
+    this.style.display = 'none';
+    updateCompletionNote(p, pop);
+  };
+
+  pop.querySelector('#doneDate') && pop.querySelector('#doneDate').addEventListener('change', function() {
+    updateCompletionNote(p, pop);
+  });
+
+  pop.querySelector('#bConfirmComplete').onclick = function() {
+    var dateVal = pop.querySelector('#doneDate').value;
+    doCompletion(p, dateVal);
+  };
+
+  pop.querySelector('#bGoEdit').onclick = function() {
+    enterEdit();
+  };
+}
+
+function updateCompletionNote(p, pop) {
+  var dateInput = pop.querySelector('#doneDate');
+  var note = pop.querySelector('#cNote');
+  if (!dateInput || !note) return;
+  var v = dateInput.value;
+  if (v === p.end) {
+    note.className = 'pnote ok';
+    note.textContent = 'Matches planned end — saves instantly, stays live.';
+  } else if (v < p.end) {
+    note.className = 'pnote warn';
+    note.textContent = 'Finished early (' + fmt(v) + ' vs planned ' + fmt(p.end) + ') — plan will regenerate to pull forward downstream.';
+  } else {
+    note.className = 'pnote warn';
+    note.textContent = 'Finished late (' + fmt(v) + ' vs planned ' + fmt(p.end) + ') — plan will regenerate to cascade downstream.';
+  }
+}
+
+// EDIT MODE — completed (locked)
+function renderEditLockedPop(pop, p) {
+  pop.innerHTML = '<div class="pop-ttl">' + p.name
+    + ' <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#5dcaa5" stroke-width="2.5"><path d="M5 13l4 4L19 7"/></svg>'
+    + '<span class="pop-close" id="px">×</span></div>'
+    + '<div class="prow"><span>Completed</span><b class="green">' + fmt(p.completedOn) + '</b></div>'
+    + '<div class="locked-note"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="display:inline-block;vertical-align:-2px;margin-right:4px"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>Reopen this process first to edit its dates.</div>'
+    + '<div class="pbtn" id="bReopen">Reopen process</div>';
+
+  pop.querySelector('#px').onclick = killPop;
+  pop.querySelector('#bReopen').onclick = function() { doReopen(p); };
+}
+
+// EDIT MODE — date editor
+function renderEditDatesPop(pop, p) {
+  var staged = edits[p.id] || {};
+  var curStart = staged.start || p.start;
+  var curEnd   = staged.end   || p.end;
+
+  pop.innerHTML = '<div class="pop-ttl">Edit dates<span class="pop-close" id="px">×</span></div>'
+    + '<div style="font-size:11px;color:#8a877f;margin-bottom:6px">' + p.name + '</div>'
+    + '<div class="df"><label>Start</label><input type="date" id="dStart" value="' + curStart + '"></div>'
+    + '<div class="df"><label>End</label><input type="date" id="dEnd" value="' + curEnd + '"></div>'
+    + '<div class="pnote err" id="errNote" style="display:none">End must be on or after start.</div>'
+    + '<div class="pnote warn" id="warnNote" style="display:none">Ends after dispatch — plan will flag feasibility.</div>'
+    + '<div class="pbtn g" id="bApplyDates">Apply dates</div>'
+    + (staged.start || staged.end ? '<div class="pbtn" id="bClearEdit">Clear edits for this process</div>' : '');
+
+  pop.querySelector('#px').onclick = killPop;
+
+  function validate() {
+    var s = pop.querySelector('#dStart').value;
+    var e = pop.querySelector('#dEnd').value;
+    var bad = e < s;
+    var over = !bad && e > DISPATCH;
+    pop.querySelector('#errNote').style.display = bad ? '' : 'none';
+    pop.querySelector('#warnNote').style.display = over ? '' : 'none';
+    pop.querySelector('#bApplyDates').disabled = bad;
+    return !bad;
+  }
+
+  pop.querySelector('#dStart').addEventListener('change', validate);
+  pop.querySelector('#dEnd').addEventListener('change', validate);
+  validate();
+
+  pop.querySelector('#bApplyDates').onclick = function() {
+    if (!validate()) return;
+    var s = pop.querySelector('#dStart').value;
+    var e = pop.querySelector('#dEnd').value;
+    var cur = edits[p.id] || {};
+    cur.start = s;
+    cur.end = e;
+    // If unchanged from original, remove from edits
+    if (cur.start === p.orig_start) delete cur.start;
+    if (cur.end   === p.orig_end)   delete cur.end;
+    if (Object.keys(cur).length === 0) delete edits[p.id]; else edits[p.id] = cur;
+    render();
+  };
+
+  var bClear = pop.querySelector('#bClearEdit');
+  if (bClear) bClear.onclick = function() { delete edits[p.id]; render(); };
+}
+
+// ─────────────────────────────────────────────────────────────────
+// ACTIONS
+// ─────────────────────────────────────────────────────────────────
+function enterEdit() {
+  mode = 'edit';
+  edits = {};
+  $('cw').classList.add('editing');
+  render();
+}
+
+function exitEdit() {
+  mode = 'view';
+  edits = {};
+  $('cw').classList.remove('editing');
+  $('cw').style.paddingBottom = '';
+  render();
+  $('foot').textContent = 'Tap a bar for details or to mark complete.';
+}
+
+// Instant local reopen — no API call
+function doReopen(p) {
+  killPop();
+  p.done = false;
+  p.completedOn = null;
+  render();
+  $('foot').innerHTML = '<span style="color:#5dcaa5">✓ ' + p.name + ' reopened. Dates are now editable.</span>';
+}
+
+// Completion: on-plan = instant, off-plan = regenerate
+function doCompletion(p, actualDate) {
+  killPop();
+  if (actualDate === p.end) {
+    // On-plan — local write, no API
+    p.done = true;
+    p.completedOn = actualDate;
+    render();
+    $('foot').innerHTML = '<span style="color:#5dcaa5">✓ ' + p.name + ' completed on plan — saved directly.</span>';
+  } else {
+    // Off-plan — trigger regenerate with completion context
+    var completionContext = 'Mark ' + p.name + ' as complete. Actual finish date: ' + actualDate + ' (planned was ' + p.end + '). Recompute downstream processes accordingly.';
+    // Update local state optimistically for the regenerate payload
+    p.done = true;
+    p.completedOn = actualDate;
+    p.end = actualDate;
+    callRegenerate(completionContext);
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────
+// BUILD /schedule PAYLOAD
+// ─────────────────────────────────────────────────────────────────
+function buildSchedulePayload(contextStr) {
+  /*
+    Sends the same JSON shape your existing /schedule endpoint expects.
+    The "context" string tells Claude what changed, so it can cascade correctly.
+    draft_mode = true so the result comes back as a candidate, not live.
+  */
+  return {
+    assembly_row_id:    META.assembly_row_id,
+    assembly_number:    META.assembly_number,
+    project_number:     META.project_number,
+    dispatch_date:      META.dispatch_date || DISPATCH,
+    planned_start_date: META.planned_start_date,
+    generated_by:       META.generated_by || 'gantt-edit',
+    context:            contextStr,
+    draft_mode:         true,
+    draft_row_id:       META.draft_row_id || '',
+    update_glide:       true,
+
+    // Current process state — included so the backend/Claude has full context
+    current_processes:  procs.map(function(p) {
+      return {
+        process_row_id:   p.id,
+        process_name:     p.name,
+        phase_number:     p.phase_number,
+        start_date:       p.start,
+        end_date:         p.end,
+        is_completed:     p.done,
+        completed_on:     p.completedOn,
+        ai_duration_days: p.ai_duration_days
+      };
+    })
+  };
+}
+
+function buildEditContext() {
+  /*
+    Translates staged edits into a human-readable instruction string
+    that Claude can act on, e.g.:
+    "Change Bending CNC start to 2026-06-17, end to 2026-06-20.
+     Change TIG Welding start to 2026-06-18, end to 2026-06-22.
+     Recompute the downstream schedule to avoid overlaps and respect the dispatch date."
+  */
+  var parts = [];
+  Object.keys(edits).forEach(function(id) {
+    var p = procs.find(function(x) { return x.id === id; });
+    var e = edits[id];
+    var bits = ['Change ' + p.name];
+    if (e.start) bits.push('start to ' + e.start);
+    if (e.end)   bits.push('end to '   + e.end);
+    parts.push(bits.join(' '));
+  });
+  parts.push('Recompute the downstream schedule to avoid overlaps and respect the dispatch date of ' + DISPATCH + '.');
+  return parts.join('. ');
+}
+
+// ─────────────────────────────────────────────────────────────────
+// REGENERATE API CALL
+// ─────────────────────────────────────────────────────────────────
+function callRegenerate(contextStr) {
+  mode = 'loading';
+  killPop();
+  $('cw').classList.remove('editing');
+  $('cw').style.paddingBottom = '';
+  $('banEdit').style.display = 'none';
+  $('banLoad').style.display = 'flex';
+  $('veil').style.display = 'flex';
+  $('bSave').style.display = 'none';
+  $('bCancel').style.display = 'none';
+  $('bEdit').style.display = 'none';
+  $('bApprove').style.display = 'none';
+
+  var msgs = ['Sending edits…', 'Recomputing downstream schedule…', 'Checking dispatch feasibility…', 'Building candidate…'];
+  var mi = 0;
+  $('loadMsg').textContent = msgs[0];
+  $('veilMsg').textContent = msgs[0];
+  var ticker = setInterval(function() {
+    mi++;
+    if (mi < msgs.length) {
+      $('loadMsg').textContent = msgs[mi];
+      $('veilMsg').textContent = msgs[mi];
+    }
+  }, 1200);
+
+  var payload = buildSchedulePayload(contextStr);
+
+  fetch(CONFIG.SCHEDULE_URL, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-schedule-secret': CONFIG.SCHEDULE_SECRET
+    },
+    body: JSON.stringify(payload)
+  })
+  .then(function(res) {
+    if (!res.ok) return res.text().then(function(t) { throw new Error('HTTP ' + res.status + ': ' + t); });
+    return res.json();
+  })
+  .then(function(data) {
+    clearInterval(ticker);
+    $('banLoad').style.display = 'none';
+    $('veil').style.display = 'none';
+    mode = 'view';
+    edits = {};
+
+    // Update draft_row_id if backend returns it
+    if (data.draft_row_id) META.draft_row_id = data.draft_row_id;
+
+    // Update local procs from response if backend returns updated gantt_json
+    if (data.gantt_json && data.gantt_json.items) {
+      data.gantt_json.items.forEach(function(phase) {
+        (phase.processes || []).forEach(function(rp) {
+          var local = procs.find(function(x) { return x.id === (rp.process_row_id || rp.id); });
+          if (local) {
+            local.start = rp.start || rp.start_date || local.start;
+            local.end   = rp.end   || rp.end_date   || local.end;
+            local.orig_start = local.start;
+            local.orig_end   = local.end;
+          }
+        });
+      });
+    }
+
+    setPill('cand');
+    show('bApprove');
+    render();
+    $('foot').innerHTML = '<span style="color:#fac775">Candidate ready — review cascaded dates, then approve to go live.</span>';
+  })
+  .catch(function(err) {
+    clearInterval(ticker);
+    $('banLoad').style.display = 'none';
+    $('veil').style.display = 'none';
+    mode = 'edit';
+    $('cw').classList.add('editing');
+    $('banEdit').style.display = 'flex';
+    $('bSave').style.display = '';
+    $('bCancel').style.display = '';
+    render();
+    $('foot').innerHTML = '<span style="color:#f09595">⚠ Regeneration failed — edits are preserved. Try again.</span>'
+      + '<span style="color:#6e6b65;font-size:10px;margin-left:6px">' + err.message + '</span>';
+    console.error('Regenerate error:', err);
+  });
+}
+
+// ─────────────────────────────────────────────────────────────────
+// APPROVE — write candidate back to Glide
+// ─────────────────────────────────────────────────────────────────
+function doApprove() {
+  $('bApprove').disabled = true;
+  $('banLoad').style.display = 'flex';
+  $('loadMsg').textContent = 'Approving and writing to Glide…';
+
+  fetch(CONFIG.APPROVE_URL, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-schedule-secret': CONFIG.SCHEDULE_SECRET
+    },
+    body: JSON.stringify({
+      assembly_row_id: META.assembly_row_id,
+      assembly_number: META.assembly_number,
+      project_number:  META.project_number,
+      draft_row_id:    META.draft_row_id,
+      generated_by:    META.generated_by || 'gantt-edit'
+    })
+  })
+  .then(function(res) {
+    if (!res.ok) return res.text().then(function(t) { throw new Error('HTTP ' + res.status + ': ' + t); });
+    return res.json();
+  })
+  .then(function() {
+    $('banLoad').style.display = 'none';
+    $('bApprove').style.display = 'none';
+    setPill('live');
+    show('bEdit');
+    render();
+    $('foot').innerHTML = '<span style="color:#5dcaa5">✓ Candidate approved and promoted to live.</span>';
+  })
+  .catch(function(err) {
+    $('banLoad').style.display = 'none';
+    $('bApprove').disabled = false;
+    $('foot').innerHTML = '<span style="color:#f09595">⚠ Approval failed. Try again.</span>'
+      + '<span style="color:#6e6b65;font-size:10px;margin-left:6px">' + err.message + '</span>';
+    console.error('Approve error:', err);
+  });
+}
+
+// ─────────────────────────────────────────────────────────────────
+// BUTTON WIRING
+// ─────────────────────────────────────────────────────────────────
+$('bEdit').onclick = enterEdit;
+$('bCancel').onclick = exitEdit;
+$('bSave').onclick = function() {
+  if (Object.keys(edits).length === 0) return;
+  callRegenerate(buildEditContext());
+};
+$('bApprove').onclick = doApprove;
+
+// Dismiss popover on outside click
+document.addEventListener('click', killPop);
+
+// ─────────────────────────────────────────────────────────────────
+// INIT
+// ─────────────────────────────────────────────────────────────────
+var loaded = parsePayload();
+if (!loaded) {
+  console.info('No valid payload found — using demo data');
+  loadDemoData();
+}
+renderAxis();
+render();
+</script>
+</body>
+</html>
