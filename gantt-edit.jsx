@@ -9,6 +9,13 @@
 //               with AI" builds a candidate plan with cascaded downstream shifts
 //   CANDIDATE — ghost bars show the old dates; approve to go live or discard.
 
+// ── CONFIG — set your endpoints here ──────────────────────────────────────
+var GANTT_CONFIG = {
+  SCHEDULE_URL:    'https://glide-gantt-ai-scheduler.onrender.com/schedule',
+  SCHEDULE_SECRET: 'ayush_Wootz_2026',
+  APPROVE_URL:     'https://glide-gantt-ai-scheduler.onrender.com/approve',
+};
+
 (function () {
   const { useState, useRef, useEffect, useMemo } = React;
 
@@ -149,47 +156,219 @@
         runRegen({ [p.id]: { start: p.start, end: v } }, { id: p.id, on: v });
       }
     }
+
+    // ── BUILD CONTEXT STRING for /schedule ─────────────────────────────────
+    function buildContext(stagedMap, completion) {
+      const parts = [];
+      Object.keys(stagedMap).forEach(function(id) {
+        const p = procs.find(function(x) { return x.id === id; });
+        if (!p) return;
+        const e = stagedMap[id];
+        const bits = ['Change ' + p.name];
+        if (e.start && e.start !== p.start) bits.push('start to ' + (e.start));
+        if (e.end   && e.end   !== p.end)   bits.push('end to '   + (e.end));
+        parts.push(bits.join(' '));
+      });
+      if (completion) {
+        const cp = procs.find(function(x) { return x.id === completion.id; });
+        if (cp) parts.push('Mark ' + cp.name + ' as complete. Actual finish date: ' + completion.on + ' (planned was ' + cp.end + ')');
+      }
+      parts.push('Recompute the downstream schedule to avoid overlaps and respect the dispatch date of ' + D.dispatch + '.');
+      return parts.join('. ');
+    }
+
+    // ── runRegen: hits /schedule, returns candidate ───────────────────────
     function runRegen(stagedMap, completion) {
       setMode('view'); setPop(null); setDrag(null);
-      const msgs = ['Saving changes\u2026', 'Updating the schedule\u2026', 'Rescheduling later steps\u2026', 'Preparing the updated plan\u2026'];
+
+      const msgs = [
+        'Saving changes\u2026',
+        'Updating the schedule\u2026',
+        'Rescheduling later steps\u2026',
+        'Preparing the updated plan\u2026',
+      ];
       let i = 0;
       setVeil(msgs[0]);
       const iv = setInterval(() => { i++; if (i < msgs.length) setVeil(msgs[i]); }, 950);
       timersRef.current.push(iv);
-      const to = setTimeout(() => {
+
+      // Build payload — same shape as the original /schedule call
+      const meta = D.meta || {};
+      const payload = {
+        assembly_row_id:    meta.assembly_row_id    || '',
+        assembly_number:    meta.assembly_number    || '',
+        project_number:     meta.project_number     || '',
+        dispatch_date:      meta.dispatch_date      || D.dispatch,
+        planned_start_date: meta.planned_start_date || '',
+        generated_by:       meta.generated_by       || '',
+        draft_mode:         true,
+        draft_row_id:       meta.draft_row_id       || '',
+        update_glide:       true,
+        context:            buildContext(stagedMap, completion),
+        // Full current state so the backend/Claude has complete context
+        current_processes:  procs.map(function(p) {
+          return {
+            process_row_id:   p.id,
+            process_name:     p.name,
+            phase_number:     String(p.phase),
+            start_date:       p.start,
+            end_date:         p.end,
+            is_completed:     p.done,
+            completed_on:     p.completedOn || null,
+          };
+        }),
+      };
+
+      fetch(GANTT_CONFIG.SCHEDULE_URL, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-schedule-secret': GANTT_CONFIG.SCHEDULE_SECRET,
+        },
+        body: JSON.stringify(payload),
+      })
+      .then(function(res) {
+        if (!res.ok) return res.text().then(function(t) { throw new Error('HTTP ' + res.status + ': ' + t); });
+        return res.json();
+      })
+      .then(function(data) {
         clearInterval(iv);
-        const res = GD.cascade(procs, phases, stagedMap);
-        if (completion) {
-          const q = res.procs.find((x) => x.id === completion.id);
-          if (q) { q.done = true; q.completedOn = completion.on; }
+
+        // Update draft_row_id for subsequent approve call
+        if (data.draft_row_id && D.meta) D.meta.draft_row_id = data.draft_row_id;
+
+        // Parse updated processes from response gantt_json
+        let newProcs = null;
+        const gj = data.gantt_json || data.candidate_gantt_json || data;
+        if (gj && gj.items) {
+          newProcs = [];
+          gj.items.forEach(function(phase) {
+            (phase.processes || []).forEach(function(rp) {
+              const local = procs.find(function(x) { return x.id === (rp.process_row_id || rp.id); });
+              newProcs.push({
+                id:          rp.process_row_id || rp.id || (local && local.id),
+                name:        rp.label || rp.process_name || rp.name || (local && local.name) || 'Process',
+                phase:       parseInt(phase.phase_number || phase.phase || 1, 10),
+                start:       (rp.start || rp.start_date || '').slice(0, 10),
+                end:         (rp.end   || rp.end_date   || '').slice(0, 10),
+                done:        !!(rp.is_completed || rp.completed),
+                completedOn: rp.completed_on || null,
+              });
+            });
+          });
         }
-        setCandidate(res); setStaged({}); setVeil(null);
+
+        // If backend returns updated processes, use them; else fall back to local cascade
+        let result;
+        if (newProcs && newProcs.length) {
+          const ghosts = {};
+          procs.forEach(function(p) {
+            const q = newProcs.find(function(x) { return x.id === p.id; });
+            if (q && (q.start !== p.start || q.end !== p.end)) ghosts[p.id] = { start: p.start, end: p.end };
+          });
+          const editedIds = Object.keys(stagedMap);
+          const shiftedIds = newProcs
+            .filter(function(q) { return ghosts[q.id] && editedIds.indexOf(q.id) < 0; })
+            .map(function(q) { return q.id; });
+          result = { procs: newProcs, editedIds, shiftedIds, shiftDays: 0, ghosts };
+        } else {
+          // Fallback: local cascade simulation
+          result = GD.cascade(procs, phases, stagedMap);
+          if (completion) {
+            const q = result.procs.find(function(x) { return x.id === completion.id; });
+            if (q) { q.done = true; q.completedOn = completion.on; }
+          }
+        }
+
+        setCandidate(result);
+        setStaged({});
+        setVeil(null);
         setToast({ tone: 'info', text: 'Plan updated — review what changed, then approve.' });
-      }, 3900);
-      timersRef.current.push(to);
+      })
+      .catch(function(err) {
+        clearInterval(iv);
+        setVeil(null);
+        setMode('edit');
+        setToast({ tone: 'err', text: 'Save failed: ' + err.message + ' — edits preserved, try again.' });
+        console.error('runRegen error:', err);
+      });
     }
+
+    // ── approve: hits /approve, then promotes candidate to live ────────────
     function approve() {
       if (!candidate) return;
-      const np = candidate.procs.map((p) => Object.assign({}, p));
-      setProcs(np); setPhases(GD.derivePhases(np)); setCandidate(null); setPop(null);
-      setToast({ tone: 'ok', text: '\u2713 Plan approved — changes are now live.' });
+      const meta = D.meta || {};
+
+      setVeil('Approving plan\u2026');
+
+      fetch(GANTT_CONFIG.APPROVE_URL, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-schedule-secret': GANTT_CONFIG.SCHEDULE_SECRET,
+        },
+        body: JSON.stringify({
+          assembly_row_id: meta.assembly_row_id || '',
+          assembly_number: meta.assembly_number || '',
+          project_number:  meta.project_number  || '',
+          draft_row_id:    meta.draft_row_id     || '',
+          generated_by:    meta.generated_by     || '',
+        }),
+      })
+      .then(function(res) {
+        if (!res.ok) return res.text().then(function(t) { throw new Error('HTTP ' + res.status + ': ' + t); });
+        return res.json();
+      })
+      .then(function() {
+        const np = candidate.procs.map(function(p) { return Object.assign({}, p); });
+        setProcs(np);
+        setPhases(GD.derivePhases(np));
+        setCandidate(null);
+        setPop(null);
+        setVeil(null);
+        setToast({ tone: 'ok', text: '\u2713 Plan approved — changes are now live.' });
+      })
+      .catch(function(err) {
+        setVeil(null);
+        setToast({ tone: 'err', text: 'Approve failed: ' + err.message + ' — try again.' });
+        console.error('approve error:', err);
+      });
     }
+
     function discard() {
       setCandidate(null); setPop(null);
       setToast({ tone: 'warn', text: 'Update discarded — plan unchanged.' });
     }
 
     // ── drag ──────────────────────────────────────────────────────────────
+    function prevPhaseEnd(phaseNum) {
+      const inPhase = shown.filter((x) => x.phase === phaseNum);
+      if (!inPhase.length) return null;
+      return inPhase.reduce((mx, x) => {
+        const e = (!candidate && staged[x.id] && staged[x.id].end) || x.end;
+        return GD.toMs(e) > GD.toMs(mx) ? e : mx;
+      }, inPhase[0].end);
+    }
     function calcDrag(d, clientX) {
       const dd = Math.round((clientX - d.x0) / dayPx);
+      const dur = GD.daysBetween(d.s0, d.e0);
       let s = d.s0, e = d.e0;
       if (d.type === 'm') { s = GD.addDays(d.s0, dd); e = GD.addDays(d.e0, dd); }
       else if (d.type === 'l') { s = GD.addDays(d.s0, dd); if (GD.toMs(s) > GD.toMs(e)) s = e; }
       else { e = GD.addDays(d.e0, dd); if (GD.toMs(e) < GD.toMs(s)) e = s; }
-      return { s, e };
+      let wall = null;
+      if (d.p.phase > 1) {
+        wall = prevPhaseEnd(d.p.phase - 1);
+        if (wall && GD.toMs(s) < GD.toMs(wall)) {
+          s = wall;
+          if (d.type === 'm') e = GD.addDays(s, dur);
+        }
+      }
+      return { s, e, wall };
     }
     function startDrag(ev, p) {
       if (mode !== 'edit' || p.done || candidate || veil) return;
+      setPop(null);
       const r = ev.currentTarget.getBoundingClientRect();
       const off = ev.clientX - r.left;
       const type = off < 12 ? 'l' : off > r.width - 12 ? 'r' : 'm';
@@ -203,7 +382,7 @@
       if (Math.abs(ev.clientX - d.x0) > 4) d.moved = true;
       if (!d.moved) return;
       const r = calcDrag(d, ev.clientX);
-      setDrag({ id: d.id, start: r.s, end: r.e, out: outOf(d.p, r.s, r.e) });
+      setDrag({ id: d.id, start: r.s, end: r.e, out: outOf(d.p, r.s, r.e), wall: r.wall });
     }
     function endDrag(ev) {
       const d = dragRef.current;
@@ -259,8 +438,8 @@
       let badgeRightPx = 8;
 
       if (edited) {
-        const tone = C.pending;
-        const fill = 'rgba(96,165,250,0.13)';
+        const tone = C.active;
+        const fill = 'rgba(245,158,11,0.10)';
         if (ghost && (ghost.start !== ds || ghost.end !== de)) {
           segs.push(<div key="g" className="ge-seg" style={{ left: pct(ghost.start) + '%', width: wPct(ghost.start, ghost.end) + '%', top: barY, height: barH, borderRadius: 5, border: '1.5px dashed #3f3f46' }}></div>);
         }
@@ -300,20 +479,17 @@
           extras.push(<span key="pc" className="ge-pct" style={{ left: 'calc(' + rightPct + '% - 6px)', top: row.h / 2 }}>{Math.round((fillW / width) * 100)}%</span>);
         }
       } else {
-        // overdue — but NOT past dispatch: a warm nudge, not an alarm. It may
-        // just mean the process needs marking complete. Amber, never red.
         segs.push(<div key="b" className="ge-seg" style={{ left: left + '%', width: width + '%', top: barY, height: barH, borderRadius: 5, border: '1.5px solid ' + C.active, background: 'rgba(245,158,11,0.10)' }}></div>);
         if (todayPct > rightPct) segs.push(<div key="o" className="ge-seg ge-stripe-amber" style={{ left: rightPct + '%', width: (todayPct - rightPct) + '%', top: barY, height: barH, borderRadius: 5, borderLeft: 'none' }}></div>);
         const lateN = GD.daysBetween(de, D.today);
         extras.push(<span key="lt" className="ge-nudge" style={{ left: 'calc(' + todayPct + '% + 6px)', top: row.h / 2 }}>{lateN}d over · update?</span>);
       }
 
-      // label
       const est = p.name.length * 6.6 + 20;
       const fits = (width / 100) * layerW > est;
       let labColor = '#d4d4d8', deco, labWeight = 600;
       if (stt === 'completed') { labColor = '#a1a1aa'; deco = undefined; labWeight = 500; }
-      else if (edited) { labColor = '#e0e7ff'; labWeight = 700; }
+      else if (edited) { labColor = '#fff'; labWeight = 700; }
       else if (stt === 'delayed') { labColor = '#fde68a'; labWeight = 700; }
       else if (stt === 'active') { labColor = '#fff'; labWeight = 700; }
       let labStyle, placeRight = true;
@@ -331,9 +507,6 @@
         </span>
       );
 
-      // Hit area. While editable (drag) it hugs the bar so the resize handles
-      // line up. Otherwise it widens to cover the label sitting outside the
-      // bar, so clicking a short completed bar's NAME still opens it.
       const estPct = (est / layerW) * 100;
       let hitLeftPct = left, hitWidthPct = width;
       if (!editable && !fits) {
@@ -362,19 +535,21 @@
       );
     }
 
-    // ── drag chrome: phase window band + tooltip ──────────────────────────
+    // ── drag chrome ────────────────────────────────────────────────────────
     const dProc = drag ? sorted.find((x) => x.id === drag.id) : null;
-    let band = null, tip = null;
+    let tip = null;
+    const wallLine = (drag && drag.wall && dProc)
+      ? <div className="ge-vline" style={{ left: pct(drag.wall) + '%', top: 44, bottom: 8, width: 2, marginLeft: -1, borderLeft: '2px dashed rgba(161,161,170,0.5)', zIndex: 6 }}></div>
+      : null;
     if (dProc) {
-      const w = winOf(dProc.phase);
-      const rows = layout.filter((r) => r.kind === 'proc' && r.p.phase === dProc.phase);
-      // (Phase-window guide band intentionally omitted — kept the chart clean.)
       const row = layout.find((r) => r.kind === 'proc' && r.p.id === drag.id);
       if (row) {
+        const clamped = drag.wall && GD.toMs(drag.start) <= GD.toMs(drag.wall);
         tip = (
           <div className="ge-tip" style={{ left: pct(drag.start) + '%', top: row.y - 4 }}>
-            {GD.fmtRange(drag.start, drag.end)} · {GD.durDays(drag.start, drag.end)}d
-            {drag.out && <span className="ext"> · extends Phase {dProc.phase}</span>}
+            {clamped
+              ? <span>Can't go earlier · <span className="ext">Phase {dProc.phase - 1} ends {GD.fmt(drag.wall)}</span></span>
+              : <span>{GD.fmtRange(drag.start, drag.end)} · {GD.durDays(drag.start, drag.end)}d{drag.out ? <span className="ext"> · extends Phase {dProc.phase}</span> : null}</span>}
           </div>
         );
       }
@@ -403,6 +578,7 @@
           inner = p.done
             ? <window.GEPopLocked p={p} onReopen={() => reopen(p)} onClose={() => setPop(null)}></window.GEPopLocked>
             : <window.GEPopEdit key={p.id + (st ? '-st' : '')} p={p} cur={{ start: ds, end: de }} win={w} isStaged={!!st}
+                minStart={p.phase > 1 ? prevPhaseEnd(p.phase - 1) : null}
                 onApply={(s, e) => { commitDates(p, s, e); setPop(null); }}
                 onClear={() => { clearStaged(p.id); setPop(null); }}
                 onClose={() => setPop(null)}></window.GEPopEdit>;
@@ -422,10 +598,22 @@
       }
     }
 
-    // ── candidate banner stats ────────────────────────────────────────────
     const candOverN = candidate ? candidate.procs.filter((p) => !p.done && GD.toMs(p.end) > GD.toMs(D.dispatch)).length : 0;
 
-    // ── render ────────────────────────────────────────────────────────────
+    const hasInvalid = shown.some((p) => !p.start || !p.end);
+    if (hasInvalid) {
+      return (
+        <div className="ge-root">
+          <window.GEStyles></window.GEStyles>
+          <div style={{ padding: '40px 20px', textAlign: 'center', color: '#e5e7eb' }}>
+            <div style={{ fontSize: '16px', fontWeight: '600', marginBottom: '8px' }}>Manufacturing sequence updated</div>
+            <div style={{ fontSize: '13px', color: '#9ca3af', marginBottom: '24px' }}>Refresh to show latest timelines</div>
+            <button style={{ padding: '8px 16px', borderRadius: '6px', border: '1px solid #3f3f46', background: '#1f1f1f', color: '#d4d4d8', cursor: 'pointer', fontSize: '12px', fontWeight: '600' }} onClick={() => window.location.reload()}>Refresh</button>
+          </div>
+        </div>
+      );
+    }
+
     return (
       <div className="ge-root"
         onClick={() => setPop(null)}
@@ -474,22 +662,18 @@
           </div>
         )}
 
-        <div className="ge-card" ref={cardRef}>
+        <div className={'ge-card' + (candidate ? ' approval' : '')} ref={cardRef}>
           <div className="ge-layer" style={{ height: chartH }}>
             {ticks.map((t, i) => <div key={'g' + i} className="ge-grid" style={{ left: t.x + '%' }}></div>)}
             {months.map((m, i) => <div key={'m' + i} className="ge-axis-month" style={{ left: m.x + '%' }}>{m.label}</div>)}
             {ticks.map((t, i) => <div key={'d' + i} className="ge-axis-day" style={{ left: t.x + '%' }}>{t.label}</div>)}
 
             <div className="ge-zone" style={{ left: dispPct + '%', width: (100 - dispPct) + '%', top: 48, bottom: 10 }}></div>
-            {band}
-
             <div className="ge-vline" style={{ left: dispPct + '%', top: 48, bottom: 8, width: 2, marginLeft: -1, background: C.dispatch, boxShadow: '0 0 10px rgba(16,185,129,.4)', zIndex: 3 }}></div>
             <div className="ge-badge" style={{ left: dispPct + '%', top: 5, background: C.dispatch, color: '#04150d', zIndex: 6 }}>DISPATCH · {GD.fmt(D.dispatch).toUpperCase()}</div>
 
             {layout.map((r) => {
               if (r.kind === 'phase') {
-                const w = winOf(r.num);
-                const wl = pct(w.start), ww = pct(GD.addDays(w.end, 1)) - wl;
                 return (
                   <div key={'ph' + r.num} className="ge-row" style={{ top: r.y, height: PHASE_H }}>
                     <div className="ge-phase-rule"></div>
@@ -504,6 +688,7 @@
             <div className="ge-vline" style={{ left: todayPct + '%', top: 44, bottom: 8, width: 2, marginLeft: -1, background: '#fff', zIndex: 4 }}></div>
             <div className="ge-badge" style={{ left: todayPct + '%', top: 5, background: '#fff', color: '#0b0d12', zIndex: 7 }}>TODAY · {GD.fmt(D.today).toUpperCase()}</div>
 
+            {wallLine}
             {tip}
             {popEl}
           </div>
