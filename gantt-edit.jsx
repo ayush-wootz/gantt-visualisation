@@ -712,6 +712,9 @@ var GANTT_CONFIG = {
                 : mode === 'edit'
                   ? 'Drag bars to move · drag edges to resize · click a bar for exact dates.'
                   : 'Click a bar for details or to mark a process complete.'}</span>}
+          <span style={{ marginLeft: 'auto', fontSize: '10px', color: '#4b5563', fontStyle: 'italic' }}>
+            AI-generated plan — dates are estimates, please review before dispatch.
+          </span>
         </div>
       </div>
     );
