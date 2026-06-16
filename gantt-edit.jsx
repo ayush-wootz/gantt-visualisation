@@ -19,8 +19,8 @@ var GANTT_CONFIG = {
 (function () {
   const { useState, useRef, useEffect, useMemo } = React;
 
-  const ROW_H = 28, ROW_DONE = 18, PHASE_H = 22, BAR_H = 20, BAR_DONE = 7;
-  const TOP = 56, GROUP_GAP = 4, BOT = 12;
+  const ROW_H = 34, ROW_DONE = 22, PHASE_H = 26, BAR_H = 22, BAR_DONE = 8;
+  const TOP = 56, GROUP_GAP = 8, BOT = 16;
 
   function GanttEdit({ forced, embed }) {
     const GD = window.GanttEditData;
@@ -32,7 +32,18 @@ var GANTT_CONFIG = {
     const [phases, setPhases] = useState(() => D.phases);
     const [mode, setMode] = useState(fx.mode || 'view');
     const [staged, setStaged] = useState(() => fx.staged || {});
-    const [candidate, setCandidate] = useState(() => fx.candidate || null);
+    const [candidate, setCandidate] = useState(() => {
+      if (fx.candidate) return fx.candidate;
+      if (D.candidateProcs && D.candidateProcs.length) {
+        const ghosts = {};
+        D.procs.forEach(function(p) {
+          const q = D.candidateProcs.find(function(x) { return x.id === p.id; });
+          if (q && (q.start !== p.start || q.end !== p.end)) ghosts[p.id] = { start: p.start, end: p.end };
+        });
+        return { procs: D.candidateProcs, editedIds: [], shiftedIds: [], shiftDays: 0, ghosts: ghosts };
+      }
+      return null;
+    });
     const [veil, setVeil] = useState(fx.veil || null);
     const [pop, setPop] = useState(() => fx.pop || null);
     const [drag, setDrag] = useState(() => fx.fakeDrag || null);
