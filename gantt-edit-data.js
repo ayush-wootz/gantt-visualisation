@@ -94,6 +94,7 @@ window.GanttEditData = (function () {
   // ── payload parsing (edit.html-compatible) ──────────────────────────────
   let _today = TODAY_DEFAULT, _dispatch = DISPATCH_DEFAULT, _procs = DEMO;
   let _source = 'demo', _meta = {}, _phaseWin = null, _loaded = null;
+  let _candidateProcs = null;
 
   function parseItems(plan) {
     const procs = [], phaseWin = {};
@@ -140,7 +141,9 @@ window.GanttEditData = (function () {
         txt = decodeURIComponent(escape(atob(b64)));
       }
       const json = JSON.parse(txt);
-      const plan = json.candidate || json.approved || json;
+      const approvedPlan = json.approved || json;
+      const candidatePlan = json.candidate || null;
+      const plan = approvedPlan;
       const parsed = parseItems(plan);
       if (!parsed.procs.length) return;
       _procs = parsed.procs;
@@ -149,6 +152,12 @@ window.GanttEditData = (function () {
       _dispatch = (_meta.dispatch_date || plan.dispatch_date || DISPATCH_DEFAULT).slice(0, 10);
       _phaseWin = Object.keys(parsed.phaseWin).length ? parsed.phaseWin : null;
       _today = todayParam || new Date().toISOString().slice(0, 10);
+      if (candidatePlan) {
+        const cp = parseItems(candidatePlan);
+        _candidateProcs = cp.procs.length ? cp.procs : null;
+      } else {
+        _candidateProcs = null;
+      }
     } catch (e) {
       console.warn('GanttEditData: payload parse failed, using demo.', e);
     }
@@ -161,7 +170,7 @@ window.GanttEditData = (function () {
     const phases = _phaseWin
       ? Object.values(_phaseWin).sort(function (a, b) { return a.num - b.num; })
       : derivePhases(procs);
-    _loaded = { procs: procs, phases: phases, today: _today, dispatch: _dispatch, source: _source, meta: _meta };
+    _loaded = { procs: procs, phases: phases, today: _today, dispatch: _dispatch, source: _source, meta: _meta, candidateProcs: _candidateProcs };
     return _loaded;
   }
 
