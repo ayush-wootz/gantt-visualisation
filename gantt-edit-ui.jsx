@@ -186,7 +186,7 @@
       .ge-banner.cand{background:#171717;border-color:rgba(245,158,11,.30);color:#fde68a}
       .ge-banner b.warn{color:#fca5a5;font-weight:600}
       .ge-card{position:relative;background:#0e0e0e;border:1px solid #262626;border-radius:0;overflow:hidden;box-shadow:inset 0 1px 0 rgba(255,255,255,0.02);transition:background .3s,border-color .3s;flex:1;overflow:auto}
-      .ge-card.approval{background:rgba(245,158,11,0.12);border-color:rgba(245,158,11,0.50);box-shadow:inset 0 0 60px rgba(245,158,11,0.06),inset 0 0 0 1px rgba(245,158,11,0.20)}
+      .ge-card.approval{background:rgba(245,158,11,0.10) !important;border-color:rgba(245,158,11,0.40) !important}
       .ge-layer{position:relative;margin:0 20px}
       .ge-grid{position:absolute;top:48px;bottom:12px;width:1px;background:#222;pointer-events:none}
       .ge-axis-month{position:absolute;top:8px;font-size:10px;color:#6b7280;font-weight:700;letter-spacing:1.5px;pointer-events:none}
