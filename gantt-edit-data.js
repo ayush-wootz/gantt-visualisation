@@ -14,22 +14,42 @@ window.GanttEditData = (function () {
   const MS_DAY = 86400000;
   const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 
+  // ── phase ranking ───────────────────────────────────────────────────────
+  // Text phases ("Final", "Pre-final") must always sort AFTER numbered phases.
+  // RM procurement "0" stays first. Returns a sortable number; phaseLabel()
+  // gives the human-facing label.
+  function phaseRank(phase) {
+    const s = String(phase == null ? '' : phase).toLowerCase().trim();
+    if (s === 'final') return 9999;
+    if (s === 'pre-final' || s === 'prefinal' || s === 'pre final') return 9998;
+    const n = parseInt(s, 10);
+    return isNaN(n) ? 9997 : n;
+  }
+  function phaseLabel(phase) {
+    const s = String(phase == null ? '' : phase).trim();
+    const low = s.toLowerCase();
+    if (low === 'final') return 'FINAL';
+    if (low === 'pre-final' || low === 'prefinal' || low === 'pre final') return 'PRE-FINAL';
+    // numeric or anything else → "PHASE n"
+    return 'PHASE ' + s;
+  }
+
   // ── demo plan (deterministic: today is pinned) ──────────────────────────
   const TODAY_DEFAULT = '2026-06-22';
   const DISPATCH_DEFAULT = '2026-08-15';
   const DEMO = [
-    { id: 'p1',  name: 'Design review',            phase: 1, start: '2026-05-15', end: '2026-05-22', done: true,  completedOn: '2026-05-22' },
-    { id: 'p2',  name: 'BOM finalization',         phase: 1, start: '2026-05-20', end: '2026-06-01', done: true,  completedOn: '2026-06-01' },
-    { id: 'p3',  name: 'Raw material procurement', phase: 2, start: '2026-05-25', end: '2026-06-18', done: true,  completedOn: '2026-06-18' },
-    { id: 'p4',  name: 'Vendor confirm',           phase: 2, start: '2026-06-01', end: '2026-06-20', done: false, completedOn: null },
-    { id: 'p5',  name: 'CNC machining',            phase: 3, start: '2026-06-12', end: '2026-07-05', done: false, completedOn: null },
-    { id: 'p6',  name: 'Sheet metal fab',          phase: 3, start: '2026-06-18', end: '2026-07-08', done: false, completedOn: null },
-    { id: 'p7',  name: 'Welding',                  phase: 3, start: '2026-06-28', end: '2026-07-10', done: false, completedOn: null },
-    { id: 'p8',  name: 'Surface treatment',        phase: 4, start: '2026-07-05', end: '2026-07-18', done: false, completedOn: null },
-    { id: 'p9',  name: 'Sub-assembly',             phase: 5, start: '2026-07-15', end: '2026-07-28', done: false, completedOn: null },
-    { id: 'p10', name: 'Final assembly',           phase: 5, start: '2026-07-28', end: '2026-08-09', done: false, completedOn: null },
-    { id: 'p11', name: 'QC & testing',             phase: 6, start: '2026-08-06', end: '2026-08-15', done: false, completedOn: null },
-    { id: 'p12', name: 'Packing & dispatch',       phase: 6, start: '2026-08-14', end: '2026-08-18', done: false, completedOn: null },
+    { id: 'p1',  name: 'Design review',            phase: 1, phaseLabel: 'PHASE 1', start: '2026-05-15', end: '2026-05-22', done: true,  completedOn: '2026-05-22' },
+    { id: 'p2',  name: 'BOM finalization',         phase: 1, phaseLabel: 'PHASE 1', start: '2026-05-20', end: '2026-06-01', done: true,  completedOn: '2026-06-01' },
+    { id: 'p3',  name: 'Raw material procurement', phase: 2, phaseLabel: 'PHASE 2', start: '2026-05-25', end: '2026-06-18', done: true,  completedOn: '2026-06-18' },
+    { id: 'p4',  name: 'Vendor confirm',           phase: 2, phaseLabel: 'PHASE 2', start: '2026-06-01', end: '2026-06-20', done: false, completedOn: null },
+    { id: 'p5',  name: 'CNC machining',            phase: 3, phaseLabel: 'PHASE 3', start: '2026-06-12', end: '2026-07-05', done: false, completedOn: null },
+    { id: 'p6',  name: 'Sheet metal fab',          phase: 3, phaseLabel: 'PHASE 3', start: '2026-06-18', end: '2026-07-08', done: false, completedOn: null },
+    { id: 'p7',  name: 'Welding',                  phase: 3, phaseLabel: 'PHASE 3', start: '2026-06-28', end: '2026-07-10', done: false, completedOn: null },
+    { id: 'p8',  name: 'Surface treatment',        phase: 4, phaseLabel: 'PHASE 4', start: '2026-07-05', end: '2026-07-18', done: false, completedOn: null },
+    { id: 'p9',  name: 'Sub-assembly',             phase: 5, phaseLabel: 'PHASE 5', start: '2026-07-15', end: '2026-07-28', done: false, completedOn: null },
+    { id: 'p10', name: 'Final assembly',           phase: 5, phaseLabel: 'PHASE 5', start: '2026-07-28', end: '2026-08-09', done: false, completedOn: null },
+    { id: 'p11', name: 'QC & testing',             phase: 6, phaseLabel: 'PHASE 6', start: '2026-08-06', end: '2026-08-15', done: false, completedOn: null },
+    { id: 'p12', name: 'Packing & dispatch',       phase: 6, phaseLabel: 'PHASE 6', start: '2026-08-14', end: '2026-08-18', done: false, completedOn: null },
   ];
 
   // ── date helpers ────────────────────────────────────────────────────────
@@ -60,10 +80,11 @@ window.GanttEditData = (function () {
     return 'upcoming';
   }
 
+  // Phases keyed by rank now, carrying their display label.
   function derivePhases(procs) {
     const m = {};
     procs.forEach(function (p) {
-      const w = m[p.phase] || (m[p.phase] = { num: p.phase, start: p.start, end: p.end });
+      const w = m[p.phase] || (m[p.phase] = { num: p.phase, label: p.phaseLabel || ('PHASE ' + p.phase), start: p.start, end: p.end });
       if (toMs(p.start) < toMs(w.start)) w.start = p.start;
       if (toMs(p.end) > toMs(w.end)) w.end = p.end;
     });
@@ -77,15 +98,20 @@ window.GanttEditData = (function () {
   function parseItems(plan) {
     const procs = [], phaseWin = {};
     (plan.items || []).forEach(function (ph) {
-      const num = parseInt(ph.phase_number || ph.phase || 0, 10) || 0;
-      if (ph.start && ph.end) phaseWin[num] = { num: num, start: String(ph.start).slice(0, 10), end: String(ph.end).slice(0, 10) };
+      const rawPhase = ph.phase_number != null ? ph.phase_number : (ph.phase != null ? ph.phase : 0);
+      const rank = phaseRank(rawPhase);
+      const label = phaseLabel(rawPhase);
+      if (ph.start && ph.end) phaseWin[rank] = { num: rank, label: label, start: String(ph.start).slice(0, 10), end: String(ph.end).slice(0, 10) };
       (ph.processes || []).forEach(function (p, i) {
         const s = p.start || p.start_date, e = p.end || p.end_date;
         if (!s || !e) return;
+        // process may carry its own phase_number; prefer it, else inherit parent
+        const pRaw = p.phase_number != null ? p.phase_number : rawPhase;
         procs.push({
-          id: p.process_row_id || p.id || ('ph' + num + '-' + i),
+          id: p.process_row_id || p.id || ('ph' + rank + '-' + i),
           name: p.label || p.process_name || p.name || 'Process',
-          phase: num,
+          phase: phaseRank(pRaw),
+          phaseLabel: phaseLabel(pRaw),
           start: String(s).slice(0, 10),
           end: String(e).slice(0, 10),
           done: !!(p.is_completed || p.completed || p.Completed),
@@ -140,9 +166,6 @@ window.GanttEditData = (function () {
   }
 
   // ── AI cascade simulation ────────────────────────────────────────────────
-  // staged: { [id]: { start?, end? } }. Any edit whose end extends past its
-  // phase window pushes every non-done process in LATER phases by the same
-  // number of days. Returns a candidate plan + ghosts of the previous dates.
   function cascade(procs, phases, staged) {
     const map = {};
     procs.forEach(function (p) { map[p.id] = Object.assign({}, p); });
@@ -208,7 +231,7 @@ window.GanttEditData = (function () {
       if (toMs(s) < toMs(w.start)) s = w.start;
       const e = addDays(tgtAI.end, -2);
       const moved = procs.map(function (p) { return p.id === tgtAI.id ? Object.assign({}, p, { start: s, end: e }) : p; });
-      return { mode: 'edit', procs: moved, toast: { tone: 'ok', text: '\u2713 ' + tgtAI.name + ' \u2192 ' + fmtRange(s, e) + ' — inside the Phase ' + tgtAI.phase + ' window, saved instantly.' } };
+      return { mode: 'edit', procs: moved, toast: { tone: 'ok', text: '\u2713 ' + tgtAI.name + ' \u2192 ' + fmtRange(s, e) + ' — inside the ' + (tgtAI.phaseLabel || 'phase') + ' window, saved instantly.' } };
     }
 
     if (kind === 'drag') {
@@ -221,7 +244,7 @@ window.GanttEditData = (function () {
     if (kind === 'ai') {
       const w = winOf(tgtAI.phase);
       const st = {}; st[tgtAI.id] = { start: tgtAI.start, end: addDays(w.end, 6) };
-      return { mode: 'edit', staged: st, toast: { tone: 'ai', text: tgtAI.name + ' now extends the Phase ' + tgtAI.phase + ' window — staged for AI regeneration.' } };
+      return { mode: 'edit', staged: st, toast: { tone: 'ai', text: tgtAI.name + ' now extends the ' + (tgtAI.phaseLabel || 'phase') + ' window — staged for AI regeneration.' } };
     }
 
     if (kind === 'regen') return { veil: 'Recomputing downstream phases\u2026' };
@@ -239,5 +262,6 @@ window.GanttEditData = (function () {
     load: load, fixtures: fixtures, cascade: cascade, derivePhases: derivePhases,
     status: status, toMs: toMs, isoFromMs: isoFromMs, fmt: fmt, fmtRange: fmtRange,
     daysBetween: daysBetween, durDays: durDays, addDays: addDays, MONTHS: MONTHS,
+    phaseRank: phaseRank, phaseLabel: phaseLabel,
   };
 })();
