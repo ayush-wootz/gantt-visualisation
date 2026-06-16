@@ -84,26 +84,35 @@ body{display:flex;flex-direction:column;overflow:hidden}
   // Accepts either the bare rows array (legacy) OR { rows, meta } (new).
   // Sets META if present. Returns the normalised turns array.
   function parsePayload(raw){
-    var sanitised=raw.replace(/\n/g,'\\n').replace(/\r/g,'');
-    var trimmed=sanitised.trim();
-    var parsed;
+    var parsed = null;
 
-    // Try object form { rows, meta } first
+    // 1) Try the raw string AS-IS first. The new { rows, meta } payload comes
+    //    straight from JSON.stringify, so it's already valid JSON — sanitising
+    //    it would double-escape the \n inside summaries and break the parse.
     try {
-      var obj=JSON.parse(trimmed);
+      var obj = JSON.parse(raw.trim());
       if(obj && !Array.isArray(obj) && (obj.rows || obj.meta)){
         META = obj.meta || null;
         parsed = obj.rows || [];
       } else if(Array.isArray(obj)) {
         parsed = obj;
-      } else {
+      } else if(obj) {
         parsed = [obj];
       }
-    } catch(e){
-      // bare comma-separated rows → wrap in array
-      try { parsed=JSON.parse('['+trimmed+']'); }
-      catch(e2){ return []; }
+    } catch(e){ /* fall through to legacy handling */ }
+
+    // 2) Legacy bare comma-separated rows (raw literal newlines inside strings).
+    if(parsed === null){
+      var sanitised = raw.replace(/\n/g,'\\n').replace(/\r/g,'').trim();
+      try {
+        var obj2 = JSON.parse(sanitised);
+        parsed = Array.isArray(obj2) ? obj2 : [obj2];
+      } catch(e2){
+        try { parsed = JSON.parse('[' + sanitised + ']'); }
+        catch(e3){ return []; }
+      }
     }
+
     if(!Array.isArray(parsed)) parsed=[parsed];
     return parsed.map(normaliseRow).sort(function(a,b){return new Date(a.ts)-new Date(b.ts);});
   }
@@ -355,10 +364,13 @@ body{display:flex;flex-direction:column;overflow:hidden}
   // ── boot ───────────────────────────────────────────────────────────────────
   try{
     var raw=readRaw();
+    console.log('[thread] raw present:', !!raw, 'len:', raw ? raw.length : 0, 'first char:', raw ? raw[0] : '-');
     baseTurns = raw ? parsePayload(raw) : [];
+    console.log('[thread] parsed turns:', baseTurns.length, 'META set:', !!META);
     setupComposer();
     rerender();
   }catch(e){
+    console.error('[thread] boot error:', e);
     document.getElementById('thread').innerHTML='<div class="empty">Error: '+e.message+'</div>';
   }
 })();
