@@ -91,7 +91,7 @@ var GANTT_CONFIG = {
       for (const p of sorted) {
         if (p.phase !== last) {
           if (last !== -1) y += GROUP_GAP;
-          layout.push({ kind: 'phase', num: p.phase, y });
+          layout.push({ kind: 'phase', num: p.phase, label: p.phaseLabel || ('PHASE ' + p.phase), y });
           y += PHASE_H;
           last = p.phase;
         }
@@ -243,12 +243,15 @@ var GANTT_CONFIG = {
         if (gj && gj.items) {
           newProcs = [];
           gj.items.forEach(function(phase) {
+            const rawPhase = phase.phase_number != null ? phase.phase_number : (phase.phase != null ? phase.phase : null);
             (phase.processes || []).forEach(function(rp) {
               const local = procs.find(function(x) { return x.id === (rp.process_row_id || rp.id); });
+              const pRaw = rp.phase_number != null ? rp.phase_number : rawPhase;
               newProcs.push({
                 id:          rp.process_row_id || rp.id || (local && local.id),
                 name:        rp.label || rp.process_name || rp.name || (local && local.name) || 'Process',
-                phase:       parseInt(phase.phase_number || phase.phase || 1, 10),
+                phase:       (pRaw != null ? GD.phaseRank(pRaw) : (local && local.phase) || 1),
+                phaseLabel:  (pRaw != null ? GD.phaseLabel(pRaw) : (local && local.phaseLabel) || 'PHASE 1'),
                 start:       (rp.start || rp.start_date || '').slice(0, 10),
                 end:         (rp.end   || rp.end_date   || '').slice(0, 10),
                 done:        !!(rp.is_completed || rp.completed),
@@ -677,7 +680,7 @@ var GANTT_CONFIG = {
                 return (
                   <div key={'ph' + r.num} className="ge-row" style={{ top: r.y, height: PHASE_H }}>
                     <div className="ge-phase-rule"></div>
-                    <div className="ge-phase-label" style={{ top: 9 }}>PHASE {r.num}</div>
+                    <div className="ge-phase-label" style={{ top: 9 }}>{r.label || ('PHASE ' + r.num)}</div>
                   </div>
                 );
               }
@@ -712,9 +715,6 @@ var GANTT_CONFIG = {
                 : mode === 'edit'
                   ? 'Drag bars to move · drag edges to resize · click a bar for exact dates.'
                   : 'Click a bar for details or to mark a process complete.'}</span>}
-          <span style={{ marginLeft: 'auto', fontSize: '10px', color: '#4b5563', fontStyle: 'italic' }}>
-            AI-generated plan — dates are estimates, please review before dispatch.
-          </span>
         </div>
       </div>
     );
