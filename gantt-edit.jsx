@@ -19,8 +19,8 @@ var GANTT_CONFIG = {
 (function () {
   const { useState, useRef, useEffect, useMemo } = React;
 
-  const ROW_H = 34, ROW_DONE = 22, PHASE_H = 26, BAR_H = 22, BAR_DONE = 8;
-  const TOP = 56, GROUP_GAP = 8, BOT = 16;
+  const ROW_H = 28, ROW_DONE = 18, PHASE_H = 22, BAR_H = 20, BAR_DONE = 7;
+  const TOP = 56, GROUP_GAP = 4, BOT = 12;
 
   function GanttEdit({ forced, embed }) {
     const GD = window.GanttEditData;
