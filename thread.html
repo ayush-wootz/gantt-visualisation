@@ -9,216 +9,222 @@
 html,body{height:100%;background:#171717;font-family:ui-sans-serif,system-ui,-apple-system,sans-serif;color:#e5e7eb}
 body{display:flex;flex-direction:column;overflow:hidden}
 #thread{flex:1;overflow-y:auto;display:flex;flex-direction:column;padding:12px 14px 8px;gap:10px}
-#thread::before{content:'';flex:1}
+#thread::before{content:'';flex:1;min-height:0}
 #thread::-webkit-scrollbar{width:3px}
 #thread::-webkit-scrollbar-thumb{background:#333;border-radius:3px}
 .divider{display:flex;align-items:center;gap:8px;font-size:10px;color:#555;font-weight:600;letter-spacing:.5px;flex-shrink:0}
 .divider::before,.divider::after{content:'';flex:1;height:1px;background:#232323}
 .turn{display:flex;flex-direction:column;gap:4px;flex-shrink:0}
 .meta{font-size:10px;color:#6b7280;text-align:right;padding:0 2px}
-.user{background:#473A1C;color:#C1A359;padding:9px 13px;border-radius:12px 12px 3px 12px;font-size:13px;line-height:1.5;align-self:flex-end;max-width:82%;white-space:pre-wrap;word-break:break-word}
+.user{background:#4A3D11;color:#b1924f;padding:9px 13px;border-radius:12px 12px 3px 12px;font-size:13px;line-height:1.5;align-self:flex-end;max-width:82%}
 .ai{background:#1c1c1c;border:1px solid #2a2a2a;color:#e5e7eb;padding:9px 13px;border-radius:12px 12px 12px 3px;font-size:13px;line-height:1.5;align-self:flex-start;max-width:82%}
 .warn{font-size:11px;color:#9ca3af;margin-top:6px;padding-top:6px;border-top:1px solid #2a2a2a;display:flex;flex-direction:column;gap:3px}
 .warn-item{display:flex;gap:5px}
 .warn-item::before{content:'⚠';font-size:10px;color:#f59e0b;flex-shrink:0;margin-top:1px}
+.changes{margin-bottom:9px;background:#141414;border:1px solid #262626;border-radius:8px;overflow:hidden}
+.ch-hd{font-size:8px;text-transform:uppercase;letter-spacing:.5px;color:#666;font-weight:700;padding:6px 10px;border-bottom:1px solid #232323;background:#181818}
+.ch-row{display:flex;align-items:center;gap:8px;padding:7px 10px;border-bottom:1px solid #1f1f1f;font-size:11px}
+.ch-row:last-child{border-bottom:none}
+.ch-dot{width:5px;height:5px;border-radius:50%;flex-shrink:0}
+.ch-dot.moved{background:#fbbf24}.ch-dot.completed{background:#86efac}.ch-dot.reopened{background:#fbbf24}.ch-dot.added{background:#93c5fd}.ch-dot.removed{background:#f87171}
+.ch-name{color:#fff;font-weight:500;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ch-val{font-family:ui-monospace,monospace;font-size:10px;color:#9ca3af;flex-shrink:0;text-align:right}
+.ch-val .old{color:#5a5a5a;text-decoration:line-through}
+.ch-val .arr{color:#555;margin:0 4px}
+.ch-val .new{color:#fde68a}
+.ch-val .done{color:#86efac}
 .approved{display:flex;justify-content:center;flex-shrink:0}
 .pill{font-size:11px;font-weight:500;color:#86efac;background:rgba(134,239,172,0.1);border:1px solid rgba(134,239,172,0.25);border-radius:999px;padding:4px 14px}
 .failed{background:#1c0a0a;border:1px solid #3a1a1a;color:#fca5a5;padding:9px 13px;border-radius:12px;font-size:12px;align-self:flex-start;max-width:82%}
 .empty{color:#6b7280;font-size:13px;text-align:center;margin:auto}
-
-/* ── loading bubble ── */
-.loading{background:#1c1c1c;border:1px solid #2a2a2a;color:#9ca3af;padding:9px 13px;border-radius:12px 12px 12px 3px;font-size:13px;align-self:flex-start;max-width:82%;display:flex;align-items:center;gap:8px}
-.spin{width:12px;height:12px;border:1.5px solid #333;border-top-color:#C1A359;border-radius:50%;animation:sp .7s linear infinite;flex:none}
-@keyframes sp{to{transform:rotate(360deg)}}
-
-/* ── input bar ── */
-#composer{flex-shrink:0;border-top:1px solid #232323;background:#171717;padding:10px 12px;display:flex;gap:8px;align-items:flex-end}
-#composer.disabled{opacity:.5;pointer-events:none}
-#msgInput{flex:1;background:#1f1f1f;border:1px solid #2c2c2c;border-radius:10px;color:#e5e7eb;font-family:inherit;font-size:13px;line-height:1.4;padding:9px 12px;outline:none;resize:none;max-height:96px;min-height:38px}
-#msgInput:focus{border-color:#473A1C}
-#msgInput::placeholder{color:#555}
-#sendBtn{flex:none;width:38px;height:38px;border-radius:10px;border:none;background:#C1A359;color:#171717;cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:16px}
-#sendBtn:disabled{background:#2c2c2c;color:#555;cursor:default}
-.disclaimer{flex-shrink:0;font-size:10px;color:#4b4b4b;text-align:center;padding:0 12px 8px;font-style:italic}
 </style>
 </head>
 <body>
 <div id="thread"></div>
-<div class="disclaimer" id="disclaimer" style="display:none">AI can make mistakes while estimating the plan — please review responses.</div>
-<div id="composer" class="disabled">
-  <textarea id="msgInput" rows="1" placeholder="Ask to regenerate the plan…"></textarea>
-  <button id="sendBtn" disabled aria-label="Send"><i>↑</i></button>
-</div>
-
 <script>
 (function(){
 
-  // ── CONFIG ───────────────────────────────────────────────────────────────
-  var CONFIG = {
-    SCHEDULE_URL:    'https://glide-gantt-ai-scheduler.onrender.com/schedule',
-    SCHEDULE_SECRET: 'ayush_Wootz_2026'
-  };
-
-  var META = null;          // meta block from payload (null = input disabled)
-  var liveTurns = [];       // turns appended live this session (not yet in Glide payload)
-
   // ── parse the raw input ──────────────────────────────────────────────────
   function readRaw(){
-    var hash=(location.hash||'').replace(/^#/,'');
-    var search=location.search||'';
-    var raw='';
-    var hm=hash.match(/(?:^|&)data=([^&]*)/);
+    const hash=(location.hash||'').replace(/^#/,'');
+    const search=location.search||'';
+    let raw='';
+    const hm=hash.match(/(?:^|&)data=([^&]*)/);
     if(hm) raw=decodeURIComponent(hm[1]);
     else if(hash&&hash[0]!=='?') raw=decodeURIComponent(hash);
-    else { var p=new URLSearchParams(search); raw=p.get('data')||''; }
+    else { const p=new URLSearchParams(search); raw=p.get('data')||''; }
     if(!raw) return null;
+    // try base64 decode
     try {
-      var b64=raw.replace(/-/g,'+').replace(/_/g,'/');
+      let b64=raw.replace(/-/g,'+').replace(/_/g,'/');
       while(b64.length%4) b64+='=';
-      var decoded=decodeURIComponent(escape(atob(b64)));
+      const decoded=decodeURIComponent(escape(atob(b64)));
       if(decoded[0]==='['||decoded[0]==='{') return decoded;
     } catch(e){}
     return raw;
   }
 
-  // Accepts either the bare rows array (legacy) OR { rows, meta } (new).
-  // Sets META if present. Returns the normalised turns array.
-  function parsePayload(raw){
-    var parsed = null;
-
-    // 1) Try the raw string AS-IS first. The new { rows, meta } payload comes
-    //    straight from JSON.stringify, so it's already valid JSON — sanitising
-    //    it would double-escape the \n inside summaries and break the parse.
+  // normalise whatever shape comes in into a clean turns array
+  function normalise(raw){
+    let data;
+    // sanitise literal newlines inside JSON strings before parsing
+    const sanitised=raw.replace(/\n/g,'\\n').replace(/\r/g,'');
+    const trimmed=sanitised.trim();
     try {
-      var obj = JSON.parse(raw.trim());
-      if(obj && !Array.isArray(obj) && (obj.rows || obj.meta)){
-        META = obj.meta || null;
-        parsed = obj.rows || [];
-      } else if(Array.isArray(obj)) {
-        parsed = obj;
-      } else if(obj) {
-        parsed = [obj];
+      data=JSON.parse(trimmed[0]==='['?trimmed:'['+trimmed+']');
+    } catch(e){
+      try { data=JSON.parse(trimmed); } catch(e2){ return []; }
+    }
+    if(!Array.isArray(data)) data=[data];
+
+    return data.map(row=>{
+      let rawSummary=(row.summary||'').replace(/^\[DRAFT\]\s*/,'').replace(/\\n/g,'\n').trim();
+      let summary=rawSummary, warnings=[], changes=[];
+
+      // Pull out the "Changes since approved:" block (one change per line:
+      // kind|process|before|after). It always comes after the prose summary.
+      const chSplit=rawSummary.split(/\nChanges since approved:\s*\n?/);
+      if(chSplit.length>1){
+        rawSummary=chSplit[0].trim();
+        summary=rawSummary;
+        const lines=chSplit[1].split('\n');
+        for(const ln of lines){
+          const t=ln.trim();
+          if(!t || t.indexOf('|')<0) break; // stop at first non-change line
+          const [kind,process,before,after]=t.split('|');
+          changes.push({kind:(kind||'').trim(),process:(process||'').trim(),
+                        before:(before||'').trim(),after:(after||'').trim()});
+        }
       }
-    } catch(e){ /* fall through to legacy handling */ }
 
-    // 2) Legacy bare comma-separated rows (raw literal newlines inside strings).
-    if(parsed === null){
-      var sanitised = raw.replace(/\n/g,'\\n').replace(/\r/g,'').trim();
-      try {
-        var obj2 = JSON.parse(sanitised);
-        parsed = Array.isArray(obj2) ? obj2 : [obj2];
-      } catch(e2){
-        try { parsed = JSON.parse('[' + sanitised + ']'); }
-        catch(e3){ return []; }
+      const warnSplit=rawSummary.split(/\nAI warnings:\s*/);
+      if(warnSplit.length>1){
+        summary=warnSplit[0].trim();
+        warnings=warnSplit[1].split(/\s*\|\s*/).map(s=>s.trim()).filter(Boolean);
       }
-    }
 
-    if(!Array.isArray(parsed)) parsed=[parsed];
-    return parsed.map(normaliseRow).sort(function(a,b){return new Date(a.ts)-new Date(b.ts);});
-  }
+      // detect approved rows (no message, summary starts with "Plan approved")
+      const isApproved=!row.message&&/plan approved/i.test(summary);
+      const isFailed=/^validation failed/i.test(summary);
 
-  function normaliseRow(row){
-    var rawSummary=(row.summary||'').replace(/^\[DRAFT\]\s*/,'').replace(/\\n/g,'\n').trim();
-    var summary=rawSummary, warnings=[];
+      // extract dispatch date from approved summary
+      let dispatch='';
+      if(isApproved){
+        const m=summary.match(/Dispatch:\s*([\d-]+)/i);
+        if(m) dispatch=m[1];
+      }
 
-    var warnSplit=rawSummary.split(/\nAI warnings:\s*/);
-    if(warnSplit.length>1){
-      summary=warnSplit[0].trim();
-      warnings=warnSplit[1].split(/\s*\|\s*/).map(function(s){return s.trim();}).filter(Boolean);
-    }
-
-    var isApproved=!row.message&&/plan approved/i.test(summary);
-    var isFailed=/^validation failed/i.test(summary);
-
-    var dispatch='';
-    if(isApproved){
-      var m=summary.match(/Dispatch:\s*([\d-]+)/i);
-      if(m) dispatch=m[1];
-    }
-
-    return { ts:row.ts, by:row.by, message:row.message||'',
-             summary:isApproved||isFailed?'':summary,
-             warnings:warnings, isApproved:isApproved, isFailed:isFailed, dispatch:dispatch };
+      return { ts:row.ts, by:row.by, message:row.message||'',
+               summary:isApproved||isFailed?'':summary,
+               warnings, changes, isApproved, isFailed, dispatch };
+    }).sort((a,b)=>new Date(a.ts)-new Date(b.ts));
   }
 
   // ── formatting helpers ───────────────────────────────────────────────────
   function fmtDay(iso){
     if(!iso) return '';
-    try{ var d=new Date(iso);
+    try{
+      const d=new Date(iso);
       return d.getUTCDate()+' '+['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][d.getUTCMonth()];
     }catch(e){return '';}
   }
   function fmtTime(iso){
     if(!iso) return '';
-    try{ var d=new Date(iso);
+    try{
+      const d=new Date(iso);
       return String(d.getUTCHours()).padStart(2,'0')+':'+String(d.getUTCMinutes()).padStart(2,'0');
     }catch(e){return '';}
   }
 
-  // ── render the full thread ────────────────────────────────────────────────
+  // ── render ───────────────────────────────────────────────────────────────
   function render(turns){
-    var el=document.getElementById('thread');
-    el.innerHTML='';
+    const el=document.getElementById('thread');
     if(!turns.length){
-      var e=document.createElement('div');
-      e.className='empty'; e.textContent='No messages yet';
-      el.appendChild(e);
+      el.innerHTML='<div class="empty">No messages yet</div>';
       return;
     }
 
-    var lastDay='';
-    turns.forEach(function(t){
-      var day=fmtDay(t.ts);
+    let lastDay='';
+    turns.forEach(t=>{
+      const day=fmtDay(t.ts);
       if(day&&day!==lastDay){
         lastDay=day;
-        var d=document.createElement('div');
+        const d=document.createElement('div');
         d.className='divider'; d.textContent=day; el.appendChild(d);
       }
 
       if(t.isApproved){
-        var wrap=document.createElement('div');
+        const wrap=document.createElement('div');
         wrap.className='approved';
-        var dispatch=t.dispatch?'· '+t.dispatch+' dispatch ':'';
+        const dispatch=t.dispatch?'· '+t.dispatch+' dispatch ':'';
         wrap.innerHTML='<div class="pill">✓ Plan approved '+dispatch+'· '+fmtTime(t.ts)+'</div>';
         el.appendChild(wrap); return;
       }
 
-      var turn=document.createElement('div');
+      const turn=document.createElement('div');
       turn.className='turn';
 
-      var by=(t.by||'').replace(/@.*/,'');
-      var meta=document.createElement('div');
+      const by=(t.by||'').replace(/@.*/,'');
+      const meta=document.createElement('div');
       meta.className='meta';
       meta.textContent=(by?by+' · ':'')+fmtTime(t.ts);
       turn.appendChild(meta);
 
       if(t.message){
-        var u=document.createElement('div');
+        const u=document.createElement('div');
         u.className='user'; u.textContent=t.message;
         turn.appendChild(u);
       }
 
-      if(t.pending){
-        var ld=document.createElement('div');
-        ld.className='loading';
-        ld.innerHTML='<span class="spin"></span><span class="ldtxt">'+(t.pendingText||'Sending…')+'</span>';
-        turn.appendChild(ld);
-      } else if(t.isFailed){
-        var f=document.createElement('div');
+      if(t.isFailed){
+        const f=document.createElement('div');
         f.className='failed'; f.textContent='Could not apply — validation error. Try rephrasing.';
         turn.appendChild(f);
-      } else if(t.error){
-        var er=document.createElement('div');
-        er.className='failed'; er.textContent=t.error;
-        turn.appendChild(er);
-      } else if(t.summary){
-        var a=document.createElement('div');
-        a.className='ai'; a.textContent=t.summary;
+      } else if(t.summary || (t.changes && t.changes.length)){
+        const a=document.createElement('div');
+        a.className='ai';
+
+        // Changes-since-approved table first (computed, reliable)
+        if(t.changes && t.changes.length){
+          const box=document.createElement('div');
+          box.className='changes';
+          const hd=document.createElement('div');
+          hd.className='ch-hd'; hd.textContent='Changes since last approved';
+          box.appendChild(hd);
+          t.changes.forEach(c=>{
+            const r=document.createElement('div'); r.className='ch-row';
+            const dot=document.createElement('div'); dot.className='ch-dot '+c.kind; r.appendChild(dot);
+            const nm=document.createElement('div'); nm.className='ch-name'; nm.textContent=c.process; r.appendChild(nm);
+            const val=document.createElement('div'); val.className='ch-val';
+            if(c.kind==='completed'||c.kind==='reopened'){
+              val.innerHTML='<span class="done">'+(c.after||c.kind)+'</span>';
+            } else if(c.kind==='moved' && c.before){
+              val.innerHTML='<span class="old">'+c.before+'</span><span class="arr">→</span><span class="new">'+c.after+'</span>';
+            } else if(c.kind==='added'){
+              val.innerHTML='<span class="new">+ '+(c.after||'added')+'</span>';
+            } else if(c.kind==='removed'){
+              val.innerHTML='<span class="old">'+(c.before||'')+'</span> removed';
+            } else {
+              val.innerHTML='<span class="new">'+(c.after||'')+'</span>';
+            }
+            r.appendChild(val);
+            box.appendChild(r);
+          });
+          a.appendChild(box);
+        }
+
+        // Then the prose summary
+        if(t.summary){
+          const txt=document.createElement('div');
+          txt.textContent=t.summary;
+          a.appendChild(txt);
+        }
+
         if(t.warnings.length){
-          var w=document.createElement('div');
+          const w=document.createElement('div');
           w.className='warn';
-          [].concat(t.warnings).filter(function(v,i,arr){return arr.indexOf(v)===i;}).forEach(function(txt){
-            var wi=document.createElement('div');
+          [...new Set(t.warnings)].forEach(txt=>{
+            const wi=document.createElement('div');
             wi.className='warn-item'; wi.textContent=txt;
             w.appendChild(wi);
           });
@@ -230,147 +236,17 @@ body{display:flex;flex-direction:column;overflow:hidden}
       el.appendChild(turn);
     });
 
-    requestAnimationFrame(function(){ el.scrollTop=el.scrollHeight; });
-  }
-
-  // ── combined turns (payload + live) ───────────────────────────────────────
-  var baseTurns=[];
-  function allTurns(){ return baseTurns.concat(liveTurns); }
-  function rerender(){ render(allTurns()); }
-
-  // ── send / regenerate ─────────────────────────────────────────────────────
-  var sending=false;
-  var LOAD_MSGS=['Sending…','Recomputing schedule…','Checking dispatch feasibility…','Building the updated plan…'];
-
-  function sendMessage(){
-    if(sending || !META) return;
-    var input=document.getElementById('msgInput');
-    var text=(input.value||'').trim();
-    if(!text) return;
-
-    sending=true;
-    input.value='';
-    input.style.height='auto';
-    updateSendBtn();
-
-    var nowISO=new Date().toISOString();
-
-    // optimistic: user message + pending AI bubble in ONE turn
-    var turn={
-      ts:nowISO,
-      by:(META.generated_by||''),
-      message:text,
-      summary:'', warnings:[],
-      isApproved:false, isFailed:false,
-      pending:true, pendingText:LOAD_MSGS[0]
-    };
-    liveTurns.push(turn);
-    rerender();
-
-    // rotate the loading text
-    var mi=0;
-    var ticker=setInterval(function(){
-      mi++;
-      if(mi<LOAD_MSGS.length){
-        turn.pendingText=LOAD_MSGS[mi];
-        // update just the text node if present
-        var nodes=document.querySelectorAll('.ldtxt');
-        if(nodes.length) nodes[nodes.length-1].textContent=LOAD_MSGS[mi];
-      }
-    },1100);
-
-    // build /schedule payload
-    var payload={
-      assembly_row_id:    META.assembly_row_id    || '',
-      assembly_number:    META.assembly_number    || '',
-      project_number:     META.project_number     || '',
-      dispatch_date:      META.dispatch_date      || '',
-      planned_start_date: META.planned_start_date || '',
-      generated_by:       META.generated_by       || '',
-      draft_mode:         true,
-      draft_row_id:       META.draft_row_id        || '',
-      update_glide:       true,
-      last_approved_at:   META.last_approved_at    || '',
-      message:            text,
-      context:            text
-    };
-
-    fetch(CONFIG.SCHEDULE_URL, {
-      method:'POST',
-      headers:{ 'Content-Type':'application/json', 'x-schedule-secret':CONFIG.SCHEDULE_SECRET },
-      body:JSON.stringify(payload)
-    })
-    .then(function(res){
-      if(!res.ok) return res.text().then(function(t){ throw new Error('HTTP '+res.status+': '+t); });
-      return res.json();
-    })
-    .then(function(data){
-      clearInterval(ticker);
-      // pull the summary out of the response. Backend may return { summary } or a row.
-      var rawSummary = data.summary || data.ai_summary || (data.row && data.row.summary) || '';
-      var norm = normaliseRow({ ts:new Date().toISOString(), by:META.generated_by, message:'', summary:rawSummary });
-      turn.pending=false;
-      turn.summary=norm.summary;
-      turn.warnings=norm.warnings;
-      turn.isFailed=norm.isFailed;
-      if(data.draft_row_id) META.draft_row_id=data.draft_row_id;
-      sending=false;
-      updateSendBtn();
-      rerender();
-    })
-    .catch(function(err){
-      clearInterval(ticker);
-      turn.pending=false;
-      turn.error='Could not regenerate — '+err.message+'. Try again.';
-      sending=false;
-      updateSendBtn();
-      rerender();
-      console.error('regenerate error:',err);
+    requestAnimationFrame(()=>{
+      requestAnimationFrame(()=>{ el.scrollTop = el.scrollHeight; });
     });
   }
 
-  // ── input wiring ───────────────────────────────────────────────────────────
-  function updateSendBtn(){
-    var input=document.getElementById('msgInput');
-    var btn=document.getElementById('sendBtn');
-    var has=(input.value||'').trim().length>0;
-    btn.disabled = sending || !has || !META;
-  }
-
-  function setupComposer(){
-    var input=document.getElementById('msgInput');
-    var btn=document.getElementById('sendBtn');
-    var composer=document.getElementById('composer');
-
-    if(META){
-      composer.classList.remove('disabled');
-      document.getElementById('disclaimer').style.display='block';
-    }
-
-    input.addEventListener('input', function(){
-      input.style.height='auto';
-      input.style.height=Math.min(input.scrollHeight,96)+'px';
-      updateSendBtn();
-    });
-    input.addEventListener('keydown', function(e){
-      if(e.key==='Enter' && !e.shiftKey){
-        e.preventDefault();
-        sendMessage();
-      }
-    });
-    btn.addEventListener('click', sendMessage);
-  }
-
-  // ── boot ───────────────────────────────────────────────────────────────────
+  // ── boot ─────────────────────────────────────────────────────────────────
   try{
-    var raw=readRaw();
-    console.log('[thread] raw present:', !!raw, 'len:', raw ? raw.length : 0, 'first char:', raw ? raw[0] : '-');
-    baseTurns = raw ? parsePayload(raw) : [];
-    console.log('[thread] parsed turns:', baseTurns.length, 'META set:', !!META);
-    setupComposer();
-    rerender();
+    const raw=readRaw();
+    if(!raw){ render([]); return; }
+    render(normalise(raw));
   }catch(e){
-    console.error('[thread] boot error:', e);
     document.getElementById('thread').innerHTML='<div class="empty">Error: '+e.message+'</div>';
   }
 })();
