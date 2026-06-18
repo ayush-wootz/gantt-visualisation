@@ -4,557 +4,277 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Thread</title>
-
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
-
-html,body{
-  height:100%;
-  background:#171717;
-  font-family:ui-sans-serif,system-ui,-apple-system,sans-serif;
-  color:#e5e7eb;
-}
-
-body{
-  display:flex;
-  flex-direction:column;
-  overflow:hidden;
-}
-
-#thread{
-  flex:1;
-  overflow-y:auto;
-  display:flex;
-  flex-direction:column;
-  padding:12px 14px 8px;
-  gap:10px;
-}
-
-#thread::before{
-  content:'';
-  flex:1;
-  min-height:0;
-}
-
-#thread::-webkit-scrollbar{
-  width:3px;
-}
-
-#thread::-webkit-scrollbar-thumb{
-  background:#333;
-  border-radius:3px;
-}
-
-.divider{
-  display:flex;
-  align-items:center;
-  gap:8px;
-  font-size:10px;
-  color:#555;
-  font-weight:600;
-  letter-spacing:.5px;
-  flex-shrink:0;
-}
-
-.divider::before,
-.divider::after{
-  content:'';
-  flex:1;
-  height:1px;
-  background:#232323;
-}
-
-.turn{
-  display:flex;
-  flex-direction:column;
-  gap:4px;
-  flex-shrink:0;
-}
-
-.meta{
-  font-size:10px;
-  color:#6b7280;
-  text-align:right;
-  padding:0 2px;
-}
-
-.user{
-  background:#4A3D11;
-  color:#b1924f;
-  padding:9px 13px;
-  border-radius:12px 12px 3px 12px;
-  font-size:13px;
-  line-height:1.5;
-  align-self:flex-end;
-  max-width:82%;
-  white-space:pre-wrap;
-}
-
-.ai{
-  background:#1c1c1c;
-  border:1px solid #2a2a2a;
-  color:#e5e7eb;
-  padding:9px 13px;
-  border-radius:12px 12px 12px 3px;
-  font-size:13px;
-  line-height:1.5;
-  align-self:flex-start;
-  max-width:82%;
-  white-space:pre-wrap;
-}
-
-.warn{
-  font-size:11px;
-  color:#9ca3af;
-  margin-top:6px;
-  padding-top:6px;
-  border-top:1px solid #2a2a2a;
-  display:flex;
-  flex-direction:column;
-  gap:3px;
-  white-space:normal;
-}
-
-.warn-item{
-  display:flex;
-  gap:5px;
-}
-
-.warn-item::before{
-  content:'⚠';
-  font-size:10px;
-  color:#f59e0b;
-  flex-shrink:0;
-  margin-top:1px;
-}
-
-.changes{
-  margin-bottom:9px;
-  background:#141414;
-  border:1px solid #262626;
-  border-radius:8px;
-  overflow:hidden;
-  white-space:normal;
-}
-
-.ch-hd{
-  font-size:8px;
-  text-transform:uppercase;
-  letter-spacing:.5px;
-  color:#666;
-  font-weight:700;
-  padding:6px 10px;
-  border-bottom:1px solid #232323;
-  background:#181818;
-}
-
-.ch-row{
-  display:flex;
-  align-items:center;
-  gap:8px;
-  padding:7px 10px;
-  border-bottom:1px solid #1f1f1f;
-  font-size:11px;
-}
-
-.ch-row:last-child{
-  border-bottom:none;
-}
-
-.ch-dot{
-  width:5px;
-  height:5px;
-  border-radius:50%;
-  flex-shrink:0;
-}
-
-.ch-dot.moved{background:#fbbf24}
-.ch-dot.completed{background:#86efac}
-.ch-dot.reopened{background:#fbbf24}
-.ch-dot.added{background:#93c5fd}
-.ch-dot.removed{background:#f87171}
-
-.ch-name{
-  color:#fff;
-  font-weight:500;
-  flex:1;
-  min-width:0;
-  overflow:hidden;
-  text-overflow:ellipsis;
-  white-space:nowrap;
-}
-
-.ch-val{
-  font-family:ui-monospace,monospace;
-  font-size:10px;
-  color:#9ca3af;
-  flex-shrink:0;
-  text-align:right;
-}
-
-.ch-val .old{
-  color:#5a5a5a;
-  text-decoration:line-through;
-}
-
-.ch-val .arr{
-  color:#555;
-  margin:0 4px;
-}
-
-.ch-val .new{
-  color:#fde68a;
-}
-
-.ch-val .done{
-  color:#86efac;
-}
-
-.approved{
-  display:flex;
-  justify-content:center;
-  flex-shrink:0;
-}
-
-.pill{
-  font-size:11px;
-  font-weight:500;
-  color:#86efac;
-  background:rgba(134,239,172,0.1);
-  border:1px solid rgba(134,239,172,0.25);
-  border-radius:999px;
-  padding:4px 14px;
-}
-
-.failed{
-  background:#1c0a0a;
-  border:1px solid #3a1a1a;
-  color:#fca5a5;
-  padding:9px 13px;
-  border-radius:12px;
-  font-size:12px;
-  align-self:flex-start;
-  max-width:82%;
-}
-
-.empty{
-  color:#6b7280;
-  font-size:13px;
-  text-align:center;
-  margin:auto;
-}
+html,body{height:100%;background:#171717;font-family:ui-sans-serif,system-ui,-apple-system,sans-serif;color:#e5e7eb}
+body{display:flex;flex-direction:column;overflow:hidden}
+#thread{flex:1;overflow-y:auto;display:flex;flex-direction:column;padding:12px 14px 8px;gap:10px}
+#thread::before{content:'';flex:1;min-height:0}
+#thread::-webkit-scrollbar{width:3px}
+#thread::-webkit-scrollbar-thumb{background:#333;border-radius:3px}
+.divider{display:flex;align-items:center;gap:8px;font-size:10px;color:#555;font-weight:600;letter-spacing:.5px;flex-shrink:0}
+.divider::before,.divider::after{content:'';flex:1;height:1px;background:#232323}
+.turn{display:flex;flex-direction:column;gap:4px;flex-shrink:0}
+.meta{font-size:10px;color:#6b7280;text-align:right;padding:0 2px}
+.user{background:#4A3D11;color:#b1924f;padding:9px 13px;border-radius:12px 12px 3px 12px;font-size:13px;line-height:1.5;align-self:flex-end;max-width:82%;white-space:pre-wrap}
+.ai{background:#1c1c1c;border:1px solid #2a2a2a;color:#e5e7eb;padding:9px 13px;border-radius:12px 12px 12px 3px;font-size:13px;line-height:1.5;align-self:flex-start;max-width:82%;white-space:pre-wrap}
+.changes{margin-bottom:9px;background:#141414;border:1px solid #262626;border-radius:8px;overflow:hidden;white-space:normal}
+.ch-hd{font-size:8px;text-transform:uppercase;letter-spacing:.5px;color:#666;font-weight:700;padding:6px 10px;border-bottom:1px solid #232323;background:#181818}
+.ch-row{display:flex;align-items:center;gap:8px;padding:7px 10px;border-bottom:1px solid #1f1f1f;font-size:11px}
+.ch-row:last-child{border-bottom:none}
+.ch-dot{width:5px;height:5px;border-radius:50%;flex-shrink:0}
+.ch-dot.moved{background:#fbbf24}.ch-dot.completed{background:#86efac}.ch-dot.reopened{background:#fbbf24}.ch-dot.added{background:#93c5fd}.ch-dot.removed{background:#f87171}
+.ch-name{color:#fff;font-weight:500;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ch-val{font-family:ui-monospace,monospace;font-size:10px;color:#9ca3af;flex-shrink:0;text-align:right}
+.ch-val .old{color:#5a5a5a;text-decoration:line-through}
+.ch-val .arr{color:#555;margin:0 4px}
+.ch-val .new{color:#fde68a}
+.ch-val .done{color:#86efac}
+.approved{display:flex;justify-content:center;flex-shrink:0}
+.pill{font-size:11px;font-weight:500;color:#86efac;background:rgba(134,239,172,0.1);border:1px solid rgba(134,239,172,0.25);border-radius:999px;padding:4px 14px}
+.failed{background:#1c0a0a;border:1px solid #3a1a1a;color:#fca5a5;padding:9px 13px;border-radius:12px;font-size:12px;align-self:flex-start;max-width:82%}
+.empty{color:#6b7280;font-size:13px;text-align:center;margin:auto}
 </style>
 </head>
-
 <body>
-
 <div id="thread"></div>
 
 <script>
 (function(){
 
-  // ── parse the raw input ──────────────────────────────────────────────────
   function readRaw(){
-    const hash = (location.hash || '').replace(/^#/, '');
-    const search = location.search || '';
-    let raw = '';
+    const hash=(location.hash||'').replace(/^#/,'');
+    const search=location.search||'';
+    let raw='';
 
-    const hm = hash.match(/(?:^|&)data=([^&]*)/);
+    const hm=hash.match(/(?:^|&)data=([^&]*)/);
 
-    if (hm) {
-      raw = decodeURIComponent(hm[1]);
-    } else if (hash && hash[0] !== '?') {
-      raw = decodeURIComponent(hash);
-    } else {
-      const p = new URLSearchParams(search);
-      raw = p.get('data') || '';
+    if(hm) raw=decodeURIComponent(hm[1]);
+    else if(hash&&hash[0]!=='?') raw=decodeURIComponent(hash);
+    else{
+      const p=new URLSearchParams(search);
+      raw=p.get('data')||'';
     }
 
-    if (!raw) return null;
+    if(!raw) return null;
 
-    // Try base64 decode
-    try {
-      let b64 = raw.replace(/-/g, '+').replace(/_/g, '/');
+    try{
+      let b64=raw.replace(/-/g,'+').replace(/_/g,'/');
+      while(b64.length%4) b64+='=';
+      const decoded=decodeURIComponent(escape(atob(b64)));
 
-      while (b64.length % 4) {
-        b64 += '=';
-      }
-
-      const decoded = decodeURIComponent(escape(atob(b64)));
-
-      if (decoded[0] === '[' || decoded[0] === '{') {
-        return decoded;
-      }
-    } catch(e) {}
+      if(decoded[0]==='['||decoded[0]==='{') return decoded;
+    }catch(e){}
 
     return raw;
   }
 
-  // ── normalise whatever shape comes in into a clean turns array ────────────
   function normalise(raw){
     let data;
 
-    const sanitised = raw.replace(/\n/g, '\\n').replace(/\r/g, '');
-    const trimmed = sanitised.trim();
+    const sanitised=raw.replace(/\n/g,'\\n').replace(/\r/g,'');
+    const trimmed=sanitised.trim();
 
-    try {
-      data = JSON.parse(trimmed);
-    } catch(e) {
-      try {
-        data = JSON.parse(trimmed[0] === '[' ? trimmed : '[' + trimmed + ']');
-      } catch(e2) {
+    try{
+      data=JSON.parse(trimmed);
+    }catch(e){
+      try{
+        data=JSON.parse(trimmed[0]==='['?trimmed:'['+trimmed+']');
+      }catch(e2){
         return [];
       }
     }
 
-    // ✅ IMPORTANT FIX:
-    // If data is coming as { rows: [...] }, use data.rows
-    if (data && !Array.isArray(data) && Array.isArray(data.rows)) {
-      data = data.rows;
+    // FIX: support payload like { rows: [...] }
+    if(data&&!Array.isArray(data)&&Array.isArray(data.rows)) data=data.rows;
+
+    // Safety: support payload like [{ rows: [...] }]
+    if(Array.isArray(data)&&data.length===1&&data[0]&&Array.isArray(data[0].rows)){
+      data=data[0].rows;
     }
 
-    // ✅ Safety fix:
-    // If data became [{ rows: [...] }], unwrap that also
-    if (
-      Array.isArray(data) &&
-      data.length === 1 &&
-      data[0] &&
-      Array.isArray(data[0].rows)
-    ) {
-      data = data[0].rows;
-    }
+    if(!Array.isArray(data)) data=[data];
 
-    if (!Array.isArray(data)) {
-      data = [data];
-    }
-
-    return data.map(row => {
-      let rawSummary = (row.summary || '')
-        .replace(/^\[DRAFT\]\s*/, '')
-        .replace(/\\n/g, '\n')
+    return data.map(row=>{
+      let rawSummary=(row.summary||'')
+        .replace(/^\[DRAFT\]\s*/,'')
+        .replace(/\\n/g,'\n')
         .trim();
 
-      let summary = rawSummary;
-      let warnings = [];
-      let changes = [];
+      let summary=rawSummary;
+      let changes=[];
 
-      // Pull out the "Changes since approved:" block
-      const chSplit = rawSummary.split(/\nChanges since approved:\s*\n?/);
+      const chSplit=rawSummary.split(/\nChanges since approved:\s*\n?/);
 
-      if (chSplit.length > 1) {
-        rawSummary = chSplit[0].trim();
-        summary = rawSummary;
+      if(chSplit.length>1){
+        rawSummary=chSplit[0].trim();
+        summary=rawSummary;
 
-        const lines = chSplit[1].split('\n');
+        const lines=chSplit[1].split('\n');
 
-        for (const ln of lines) {
-          const t = ln.trim();
+        for(const ln of lines){
+          const t=ln.trim();
+          if(!t||t.indexOf('|')<0) break;
 
-          if (!t || t.indexOf('|') < 0) break;
-
-          const [kind, process, before, after] = t.split('|');
+          const [kind,process,before,after]=t.split('|');
 
           changes.push({
-            kind: (kind || '').trim(),
-            process: (process || '').trim(),
-            before: (before || '').trim(),
-            after: (after || '').trim()
+            kind:(kind||'').trim(),
+            process:(process||'').trim(),
+            before:(before||'').trim(),
+            after:(after||'').trim()
           });
         }
       }
 
-      const warnSplit = rawSummary.split(/\nAI warnings:\s*/);
+      // Keep this parsing so AI warnings are removed from the main summary.
+      // But warnings are not rendered anywhere in the UI.
+      const warnSplit=rawSummary.split(/\nAI warnings:\s*/);
 
-      if (warnSplit.length > 1) {
-        summary = warnSplit[0].trim();
-
-        warnings = warnSplit[1]
-          .split(/\s*\|\s*/)
-          .map(s => s.trim())
-          .filter(Boolean);
+      if(warnSplit.length>1){
+        summary=warnSplit[0].trim();
       }
 
-      // Detect approved rows
-      const isApproved = !row.message && /plan approved/i.test(summary);
+      const isApproved=!row.message&&/plan approved/i.test(summary);
+      const isFailed=/^validation failed/i.test(summary);
 
-      // Detect validation failed rows
-      const isFailed = /^validation failed/i.test(summary);
+      let dispatch='';
 
-      // Extract dispatch date from approved summary
-      let dispatch = '';
-
-      if (isApproved) {
-        const m = summary.match(/Dispatch:\s*([\d-]+)/i);
-
-        if (m) {
-          dispatch = m[1];
-        }
+      if(isApproved){
+        const m=summary.match(/Dispatch:\s*([\d-]+)/i);
+        if(m) dispatch=m[1];
       }
 
-      return {
-        ts: row.ts,
-        by: row.by,
-        message: row.message || '',
-        summary: isApproved || isFailed ? '' : summary,
-        warnings,
+      return{
+        ts:row.ts,
+        by:row.by,
+        message:row.message||'',
+        summary:isApproved||isFailed?'':summary,
         changes,
         isApproved,
         isFailed,
         dispatch
       };
-    }).sort((a, b) => new Date(a.ts) - new Date(b.ts));
+    }).sort((a,b)=>new Date(a.ts)-new Date(b.ts));
   }
 
-  // ── formatting helpers ───────────────────────────────────────────────────
   function fmtDay(iso){
-    if (!iso) return '';
+    if(!iso) return '';
 
-    try {
-      const d = new Date(iso);
-
-      return d.getUTCDate() + ' ' + [
-        'Jan','Feb','Mar','Apr','May','Jun',
-        'Jul','Aug','Sep','Oct','Nov','Dec'
-      ][d.getUTCMonth()];
-    } catch(e) {
+    try{
+      const d=new Date(iso);
+      return d.getUTCDate()+' '+['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][d.getUTCMonth()];
+    }catch(e){
       return '';
     }
   }
 
   function fmtTime(iso){
-    if (!iso) return '';
+    if(!iso) return '';
 
-    try {
-      const d = new Date(iso);
-
-      return String(d.getUTCHours()).padStart(2, '0') +
-        ':' +
-        String(d.getUTCMinutes()).padStart(2, '0');
-    } catch(e) {
+    try{
+      const d=new Date(iso);
+      return String(d.getUTCHours()).padStart(2,'0')+':'+String(d.getUTCMinutes()).padStart(2,'0');
+    }catch(e){
       return '';
     }
   }
 
-  // ── render ───────────────────────────────────────────────────────────────
   function render(turns){
-    const el = document.getElementById('thread');
+    const el=document.getElementById('thread');
 
-    if (!turns.length) {
-      el.innerHTML = '<div class="empty">No messages yet</div>';
+    if(!turns.length){
+      el.innerHTML='<div class="empty">No messages yet</div>';
       return;
     }
 
-    let lastDay = '';
+    let lastDay='';
 
-    turns.forEach(t => {
-      try {
-        const day = fmtDay(t.ts);
+    turns.forEach(t=>{
+      try{
+        const day=fmtDay(t.ts);
 
-        if (day && day !== lastDay) {
-          lastDay = day;
-
-          const d = document.createElement('div');
-          d.className = 'divider';
-          d.textContent = day;
+        if(day&&day!==lastDay){
+          lastDay=day;
+          const d=document.createElement('div');
+          d.className='divider';
+          d.textContent=day;
           el.appendChild(d);
         }
 
-        if (t.isApproved) {
-          const wrap = document.createElement('div');
-          wrap.className = 'approved';
+        if(t.isApproved){
+          const wrap=document.createElement('div');
+          wrap.className='approved';
 
-          const dispatch = t.dispatch ? '· ' + t.dispatch + ' dispatch ' : '';
+          const dispatch=t.dispatch?'· '+t.dispatch+' dispatch ':'';
 
-          wrap.innerHTML =
-            '<div class="pill">✓ Plan approved ' +
-            dispatch +
-            '· ' +
-            fmtTime(t.ts) +
-            '</div>';
+          wrap.innerHTML='<div class="pill">✓ Plan approved '+dispatch+'· '+fmtTime(t.ts)+'</div>';
 
           el.appendChild(wrap);
           return;
         }
 
-        const turn = document.createElement('div');
-        turn.className = 'turn';
+        const turn=document.createElement('div');
+        turn.className='turn';
 
-        const by = (t.by || '').replace(/@.*/, '');
+        const by=(t.by||'').replace(/@.*/,'');
 
-        const meta = document.createElement('div');
-        meta.className = 'meta';
-        meta.textContent = (by ? by + ' · ' : '') + fmtTime(t.ts);
+        const meta=document.createElement('div');
+        meta.className='meta';
+        meta.textContent=(by?by+' · ':'')+fmtTime(t.ts);
         turn.appendChild(meta);
 
-        if (t.message) {
-          const u = document.createElement('div');
-          u.className = 'user';
-          u.textContent = t.message;
+        if(t.message){
+          const u=document.createElement('div');
+          u.className='user';
+          u.textContent=t.message;
           turn.appendChild(u);
         }
 
-        if (t.isFailed) {
-          const f = document.createElement('div');
-          f.className = 'failed';
-          f.textContent = 'Could not apply — validation error. Try rephrasing.';
+        if(t.isFailed){
+          const f=document.createElement('div');
+          f.className='failed';
+          f.textContent='Could not apply — validation error. Try rephrasing.';
           turn.appendChild(f);
-        } else if (t.summary || (t.changes && t.changes.length)) {
-          const a = document.createElement('div');
-          a.className = 'ai';
+        }else if(t.summary||(t.changes&&t.changes.length)){
+          const a=document.createElement('div');
+          a.className='ai';
 
-          // Changes-since-approved table first
-          if (t.changes && t.changes.length) {
-            const box = document.createElement('div');
-            box.className = 'changes';
+          if(t.changes&&t.changes.length){
+            const box=document.createElement('div');
+            box.className='changes';
 
-            const hd = document.createElement('div');
-            hd.className = 'ch-hd';
-            hd.textContent = 'Changes since last approved';
+            const hd=document.createElement('div');
+            hd.className='ch-hd';
+            hd.textContent='Changes since last approved';
             box.appendChild(hd);
 
-            t.changes.forEach(c => {
-              const r = document.createElement('div');
-              r.className = 'ch-row';
+            t.changes.forEach(c=>{
+              const r=document.createElement('div');
+              r.className='ch-row';
 
-              const dot = document.createElement('div');
-              dot.className = 'ch-dot ' + c.kind;
+              const dot=document.createElement('div');
+              dot.className='ch-dot '+c.kind;
               r.appendChild(dot);
 
-              const nm = document.createElement('div');
-              nm.className = 'ch-name';
-              nm.textContent = c.process;
+              const nm=document.createElement('div');
+              nm.className='ch-name';
+              nm.textContent=c.process;
               r.appendChild(nm);
 
-              const val = document.createElement('div');
-              val.className = 'ch-val';
+              const val=document.createElement('div');
+              val.className='ch-val';
 
-              if (c.kind === 'completed' || c.kind === 'reopened') {
-                val.innerHTML =
-                  '<span class="done">' +
-                  (c.after || c.kind) +
-                  '</span>';
-              } else if (c.kind === 'moved' && c.before) {
-                val.innerHTML =
-                  '<span class="old">' +
-                  c.before +
-                  '</span><span class="arr">→</span><span class="new">' +
-                  c.after +
-                  '</span>';
-              } else if (c.kind === 'added') {
-                val.innerHTML =
-                  '<span class="new">+ ' +
-                  (c.after || 'added') +
-                  '</span>';
-              } else if (c.kind === 'removed') {
-                val.innerHTML =
-                  '<span class="old">' +
-                  (c.before || '') +
-                  '</span> removed';
-              } else {
-                val.innerHTML =
-                  '<span class="new">' +
-                  (c.after || '') +
-                  '</span>';
+              if(c.kind==='completed'||c.kind==='reopened'){
+                val.innerHTML='<span class="done">'+(c.after||c.kind)+'</span>';
+              }else if(c.kind==='moved'&&c.before){
+                val.innerHTML='<span class="old">'+c.before+'</span><span class="arr">→</span><span class="new">'+c.after+'</span>';
+              }else if(c.kind==='added'){
+                val.innerHTML='<span class="new">+ '+(c.after||'added')+'</span>';
+              }else if(c.kind==='removed'){
+                val.innerHTML='<span class="old">'+(c.before||'')+'</span> removed';
+              }else{
+                val.innerHTML='<span class="new">'+(c.after||'')+'</span>';
               }
 
               r.appendChild(val);
@@ -564,70 +284,46 @@ body{
             a.appendChild(box);
           }
 
-          // Prose summary
-          if (t.summary) {
-            const txt = document.createElement('div');
-            txt.textContent = t.summary;
+          if(t.summary){
+            const txt=document.createElement('div');
+            txt.textContent=t.summary;
             a.appendChild(txt);
-          }
-
-          // Warnings
-          if (t.warnings.length) {
-            const w = document.createElement('div');
-            w.className = 'warn';
-
-            [...new Set(t.warnings)].forEach(txt => {
-              const wi = document.createElement('div');
-              wi.className = 'warn-item';
-              wi.textContent = txt;
-              w.appendChild(wi);
-            });
-
-            a.appendChild(w);
           }
 
           turn.appendChild(a);
         }
 
         el.appendChild(turn);
-
-      } catch(rowErr) {
-        console.error('thread row render failed', rowErr, t);
+      }catch(rowErr){
+        console.error('thread row render failed',rowErr,t);
       }
     });
 
-    // Scroll to bottom
-    try {
-      requestAnimationFrame(() => {
-        requestAnimationFrame(() => {
-          el.scrollTop = el.scrollHeight;
+    try{
+      requestAnimationFrame(()=>{
+        requestAnimationFrame(()=>{
+          el.scrollTop=el.scrollHeight;
         });
       });
-    } catch(scrollErr) {}
+    }catch(scrollErr){}
   }
 
-  // ── boot ─────────────────────────────────────────────────────────────────
-  let __turns = [];
+  let __turns=[];
 
-  try {
-    const raw = readRaw();
-
-    if (raw) {
-      __turns = normalise(raw);
-    }
-  } catch(parseErr) {
-    console.error('thread parse failed', parseErr);
+  try{
+    const raw=readRaw();
+    if(raw) __turns=normalise(raw);
+  }catch(parseErr){
+    console.error('thread parse failed',parseErr);
   }
 
-  try {
+  try{
     render(__turns);
-  } catch(renderErr) {
-    document.getElementById('thread').innerHTML =
-      '<div class="empty">Error: ' + renderErr.message + '</div>';
+  }catch(renderErr){
+    document.getElementById('thread').innerHTML='<div class="empty">Error: '+renderErr.message+'</div>';
   }
 
 })();
 </script>
-
 </body>
 </html>
