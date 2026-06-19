@@ -18,7 +18,7 @@ body{display:flex;flex-direction:column;overflow:hidden}
 .meta{font-size:10px;color:#6b7280;text-align:right;padding:0 2px}
 .user{background:#4A3D11;color:#b1924f;padding:9px 13px;border-radius:12px 12px 3px 12px;font-size:13px;line-height:1.5;align-self:flex-end;max-width:82%;white-space:pre-wrap}
 .ai{background:#1c1c1c;border:1px solid #2a2a2a;color:#e5e7eb;padding:9px 13px;border-radius:12px 12px 12px 3px;font-size:13px;line-height:1.5;align-self:flex-start;max-width:82%;white-space:pre-wrap}
-.changes{margin-bottom:9px;background:#141414;border:1px solid #262626;border-radius:8px;overflow:hidden;white-space:normal}
+.changes{margin-top:9px;background:#141414;border:1px solid #262626;border-radius:8px;overflow:hidden;white-space:normal}
 .ch-hd{font-size:8px;text-transform:uppercase;letter-spacing:.5px;color:#666;font-weight:700;padding:6px 10px;border-bottom:1px solid #232323;background:#181818}
 .ch-row{display:flex;align-items:center;gap:8px;padding:7px 10px;border-bottom:1px solid #1f1f1f;font-size:11px}
 .ch-row:last-child{border-bottom:none}
@@ -95,7 +95,7 @@ body{display:flex;flex-direction:column;overflow:hidden}
 
     if(!Array.isArray(data)) data=[data];
 
-    return data.map(row=>{
+    const turns=data.map(row=>{
       let rawSummary=(row.summary||'')
         .replace(/^\[DRAFT\]\s*/,'')
         .replace(/\\n/g,'\n')
@@ -156,6 +156,20 @@ body{display:flex;flex-direction:column;overflow:hidden}
         dispatch
       };
     }).sort((a,b)=>new Date(a.ts)-new Date(b.ts));
+
+    // Only show "Changes since last approved" for turns AFTER the most recent
+    // approval. Approving a plan makes that state the new baseline, so the
+    // change tables on already-approved turns are settled history — leaving
+    // them in repeats the same "marked complete" rows on every turn. Suppress
+    // the table at/before the last approval; keep it only for live, not-yet-
+    // approved changes that came after it.
+    let lastApprovedIdx=-1;
+    turns.forEach((t,i)=>{ if(t.isApproved) lastApprovedIdx=i; });
+    if(lastApprovedIdx>=0){
+      turns.forEach((t,i)=>{ if(i<=lastApprovedIdx) t.changes=[]; });
+    }
+
+    return turns;
   }
 
   function fmtDay(iso){
@@ -240,6 +254,12 @@ body{display:flex;flex-direction:column;overflow:hidden}
           const a=document.createElement('div');
           a.className='ai';
 
+          if(t.summary){
+            const txt=document.createElement('div');
+            txt.textContent=t.summary;
+            a.appendChild(txt);
+          }
+
           if(t.changes&&t.changes.length){
             const box=document.createElement('div');
             box.className='changes';
@@ -282,12 +302,6 @@ body{display:flex;flex-direction:column;overflow:hidden}
             });
 
             a.appendChild(box);
-          }
-
-          if(t.summary){
-            const txt=document.createElement('div');
-            txt.textContent=t.summary;
-            a.appendChild(txt);
           }
 
           turn.appendChild(a);
