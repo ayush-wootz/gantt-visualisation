@@ -1,12 +1,12 @@
 // gantt-edit.jsx — the editable Gantt component.
 //
-// Interactions:
-//   VIEW  — click a bar → popover (details / mark complete / jump to edit).
-//   EDIT  — drag a bar to move, drag its edges to resize, or click for exact
-//           dates. The phase window (from the AI plan) is the rule:
-//             · dates stay inside the window  → applies instantly, no AI
-//             · dates stretch the window      → staged (indigo) → "Regenerate
-//               with AI" builds a candidate plan with cascaded downstream shifts
+// Interactions (always editable — no separate edit mode):
+//   Hover a bar → grab cursor, amber ring, edge handles, center grip, hint.
+//   Drag a bar  → move; drag its edges → resize; click → popover for exact
+//                 dates or to mark complete.
+//   Any pending change (a dragged/typed date OR a mark-complete) stages and
+//   shows the "Cancel / Save plan (n)" bar. Save hits /schedule and builds a
+//   candidate; staged edits that stretch a phase window cascade downstream.
 //   CANDIDATE — ghost bars show the old dates; approve to go live or discard.
 
 // ── CONFIG — set your endpoints here ──────────────────────────────────────
@@ -30,7 +30,6 @@ var GANTT_CONFIG = {
 
     const [procs, setProcs] = useState(() => fx.procs || D.procs);
     const [phases, setPhases] = useState(() => D.phases);
-    const [mode, setMode] = useState(fx.mode || 'view');
     const [staged, setStaged] = useState(() => fx.staged || {});
     const [candidate, setCandidate] = useState(() => {
       if (fx.candidate) return fx.candidate;
@@ -145,52 +144,50 @@ var GANTT_CONFIG = {
     function clearStaged(id) {
       setStaged((prev) => { const n = Object.assign({}, prev); delete n[id]; return n; });
     }
-    function enterEdit() { setMode('edit'); setToast(null); }
-    function exitEdit() {
+    function cancelChanges() {
       const had = stagedN > 0;
-      setMode('view'); setStaged({}); setPop(null); setDrag(null);
-      if (had) setToast({ tone: 'warn', text: 'Edits discarded — plan unchanged.' });
+      setStaged({}); setPop(null); setDrag(null);
+      if (had) setToast({ tone: 'warn', text: 'Changes discarded — plan unchanged.' });
     }
     function reopen(p) {
       setProcs((prev) => prev.map((x) => (x.id === p.id ? Object.assign({}, x, { done: false, completedOn: null }) : x)));
       setPop(null);
       setToast({ tone: 'ok', text: p.name + ' reopened — dates are editable again.' });
     }
+    // Marking complete now STAGES (like a date edit) so it shows in Save/Cancel
+    // and commits with everything else on Save. Encoded as a staged entry with
+    // a `done` flag; buildContext/runRegen turn it into a completion for the AI.
     function complete(p, v) {
       const w = winOf(p.phase);
-      if (GD.toMs(v) <= GD.toMs(w.end)) {
-        setProcs((prev) => prev.map((x) => (x.id === p.id ? Object.assign({}, x, { done: true, completedOn: v, end: v }) : x)));
-        setPop(null);
-        setToast({ tone: 'ok', text: '\u2713 ' + p.name + ' marked complete (' + GD.fmt(v) + ').' });
-      } else {
-        setPop(null);
-        runRegen({ [p.id]: { start: p.start, end: v } }, { id: p.id, on: v });
-      }
+      const beyond = GD.toMs(v) > GD.toMs(w.end);
+      setStaged((prev) => Object.assign({}, prev, { [p.id]: { start: p.start, end: v, done: true, completedOn: v } }));
+      setPop(null);
+      setToast({ tone: beyond ? 'info' : 'ok', text: '\u2713 ' + p.name + ' set to complete (' + GD.fmt(v) + ')' + (beyond ? ' \u00b7 later steps shift when you save.' : ' \u00b7 save the plan to apply.') });
     }
 
     // ── BUILD CONTEXT STRING for /schedule ─────────────────────────────────
-    function buildContext(stagedMap, completion) {
+    function buildContext(stagedMap) {
       const parts = [];
       Object.keys(stagedMap).forEach(function(id) {
         const p = procs.find(function(x) { return x.id === id; });
         if (!p) return;
         const e = stagedMap[id];
+        if (e.done) {
+          parts.push('Mark ' + p.name + ' as complete. Actual finish date: ' + (e.completedOn || e.end) + ' (planned was ' + p.end + ')');
+          return;
+        }
         const bits = ['Change ' + p.name];
         if (e.start && e.start !== p.start) bits.push('start to ' + (e.start));
         if (e.end   && e.end   !== p.end)   bits.push('end to '   + (e.end));
         parts.push(bits.join(' '));
       });
-      if (completion) {
-        const cp = procs.find(function(x) { return x.id === completion.id; });
-        if (cp) parts.push('Mark ' + cp.name + ' as complete. Actual finish date: ' + completion.on + ' (planned was ' + cp.end + ')');
-      }
       parts.push('Recompute the downstream schedule to avoid overlaps and respect the dispatch date of ' + D.dispatch + '.');
       return parts.join('. ');
     }
 
     // ── runRegen: hits /schedule, returns candidate ───────────────────────
-    function runRegen(stagedMap, completion) {
-      setMode('view'); setPop(null); setDrag(null);
+    function runRegen(stagedMap) {
+      setPop(null); setDrag(null);
 
       const msgs = [
         'Saving changes\u2026',
@@ -215,7 +212,7 @@ var GANTT_CONFIG = {
         draft_mode:         true,
         draft_row_id:       meta.draft_row_id       || '',
         update_glide:       true,
-        context:            buildContext(stagedMap, completion),
+        context:            buildContext(stagedMap),
         // Full current state so the backend/Claude has complete context
         current_processes:  procs.map(function(p) {
           return {
@@ -288,11 +285,16 @@ var GANTT_CONFIG = {
         } else {
           // Fallback: local cascade simulation
           result = GD.cascade(procs, phases, stagedMap);
-          if (completion) {
-            const q = result.procs.find(function(x) { return x.id === completion.id; });
-            if (q) { q.done = true; q.completedOn = completion.on; }
-          }
         }
+
+        // Ensure any staged completions are reflected in the candidate procs
+        Object.keys(stagedMap).forEach(function(id) {
+          const e = stagedMap[id];
+          if (e && e.done) {
+            const q = result.procs.find(function(x) { return x.id === id; });
+            if (q) { q.done = true; q.completedOn = e.completedOn || e.end; }
+          }
+        });
 
         setCandidate(result);
         setStaged({});
@@ -302,7 +304,6 @@ var GANTT_CONFIG = {
       .catch(function(err) {
         clearInterval(iv);
         setVeil(null);
-        setMode('edit');
         setToast({ tone: 'err', text: 'Save failed: ' + err.message + ' — edits preserved, try again.' });
         console.error('runRegen error:', err);
       });
@@ -381,7 +382,7 @@ var GANTT_CONFIG = {
       return { s, e, wall };
     }
     function startDrag(ev, p) {
-      if (mode !== 'edit' || p.done || candidate || veil) return;
+      if (p.done || candidate || veil) return;
       setPop(null);
       const r = ev.currentTarget.getBoundingClientRect();
       const off = ev.clientX - r.left;
@@ -446,7 +447,7 @@ var GANTT_CONFIG = {
       const barY = (row.h - barH) / 2;
       const edited = isDrag || !!st || !!candGhost;
       const ghost = (isDrag || st) ? { start: p.start, end: p.end } : candGhost;
-      const editable = mode === 'edit' && !p.done && !candidate && !veil;
+      const editable = !p.done && !candidate && !veil;
       const overs = !p.done && GD.toMs(de) > GD.toMs(D.dispatch);
       const segs = [], extras = [];
       let badgeRightPx = 8;
@@ -466,6 +467,10 @@ var GANTT_CONFIG = {
           const isShift = candidate.shiftedIds.indexOf(p.id) >= 0;
           extras.push(<span key="cb" className="ge-tag" style={{ left: 'calc(' + rightPct + '% + 6px)', top: row.h / 2 }}>{isShift ? '+' + candidate.shiftDays + 'd' : 'CHANGED'}</span>);
           badgeRightPx = 56;
+        }
+        // pending completion marker (staged mark-complete)
+        if (st && st.done) {
+          extras.push(<span key="dk" className="ge-check" style={{ left: 'calc(' + left + '% - 6px)', top: row.h / 2, opacity: 1 }}><window.GEIcon kind="check" size={11} sw={2.5} color={C.dispatch}></window.GEIcon></span>);
         }
       } else if (stt === 'completed') {
         segs.push(<div key="b" className="ge-seg" style={{ left: left + '%', width: width + '%', top: barY, height: barH, borderRadius: 4, background: '#404048', opacity: 0.85, border: '1px solid #52525b' }}></div>);
@@ -537,8 +542,11 @@ var GANTT_CONFIG = {
           onPointerCancel={editable ? endDrag : undefined}
           onClick={(e) => barClick(e, p)}
           title={p.name + ' · ' + GD.fmtRange(ds, de)}>
+          {editable && <div className="ge-frame" style={{ top: 7, height: barH }}></div>}
           {editable && <div className="ge-handle l"></div>}
           {editable && <div className="ge-handle r"></div>}
+          {editable && <div className="ge-grip"><i></i><i></i><i></i><i></i><i></i><i></i></div>}
+          {editable && <div className="ge-draghint">drag to move · edges resize</div>}
         </div>
       );
 
@@ -588,21 +596,15 @@ var GANTT_CONFIG = {
         let inner;
         if (candidate) {
           inner = <window.GEPopCandidate p={p} ghost={candidate.ghosts[p.id]} onClose={() => setPop(null)}></window.GEPopCandidate>;
-        } else if (mode === 'edit') {
-          inner = p.done
-            ? <window.GEPopLocked p={p} onReopen={() => reopen(p)} onClose={() => setPop(null)}></window.GEPopLocked>
-            : <window.GEPopEdit key={p.id + (st ? '-st' : '')} p={p} cur={{ start: ds, end: de }} win={w} isStaged={!!st}
-                minStart={p.phase > 1 ? prevPhaseEnd(p.phase - 1) : null}
-                onApply={(s, e) => { commitDates(p, s, e); setPop(null); }}
-                onClear={() => { clearStaged(p.id); setPop(null); }}
-                onClose={() => setPop(null)}></window.GEPopEdit>;
+        } else if (p.done) {
+          inner = <window.GEPopDone p={p} onReopen={() => reopen(p)} onClose={() => setPop(null)}></window.GEPopDone>;
         } else {
-          inner = p.done
-            ? <window.GEPopDone p={p} onReopen={() => reopen(p)} onClose={() => setPop(null)}></window.GEPopDone>
-            : <window.GEPopView key={p.id} p={p} win={w} today={D.today} expandInit={!!pop.expand}
-                onComplete={(v) => complete(p, v)}
-                onEdit={() => enterEdit()}
-                onClose={() => setPop(null)}></window.GEPopView>;
+          inner = <window.GEPopEditFull key={p.id + (st ? '-st' : '')} p={p} cur={{ start: ds, end: de }} win={w} staged={st || null}
+                    minStart={p.phase > 1 ? prevPhaseEnd(p.phase - 1) : null} today={D.today}
+                    onApply={(s, e) => { commitDates(p, s, e); setPop(null); }}
+                    onClear={() => { clearStaged(p.id); setPop(null); }}
+                    onComplete={(v) => complete(p, v)}
+                    onClose={() => setPop(null)}></window.GEPopEditFull>;
         }
         popEl = (
           <div className="ge-pop" style={sty} onClick={(e) => e.stopPropagation()} onPointerDown={(e) => e.stopPropagation()}>
@@ -646,25 +648,17 @@ var GANTT_CONFIG = {
                 <button className="ge-btn" onClick={discard}>Discard</button>
                 <button className="ge-btn solid" onClick={approve}><window.GEIcon kind="check" size={12} sw={2.5}></window.GEIcon> Approve plan</button>
               </React.Fragment>
-            ) : mode === 'edit' ? (
+            ) : stagedN > 0 ? (
               <React.Fragment>
-                <button className="ge-btn" onClick={exitEdit}>{stagedN ? 'Cancel' : 'Done'}</button>
-                <button className="ge-btn solid" disabled={!stagedN} onClick={() => runRegen(staged)}>
-                  <window.GEIcon kind="check" size={12} sw={2.5}></window.GEIcon> Save plan{stagedN ? ' (' + stagedN + ')' : ''}
+                <button className="ge-btn" onClick={cancelChanges}>Cancel</button>
+                <button className="ge-btn solid" onClick={() => runRegen(staged)}>
+                  <window.GEIcon kind="check" size={12} sw={2.5}></window.GEIcon> Save plan ({stagedN})
                 </button>
               </React.Fragment>
-            ) : (
-              !veil && <button className="ge-btn" onClick={enterEdit}><window.GEIcon kind="pencil" size={12}></window.GEIcon> Edit plan</button>
-            )}
+            ) : null}
           </div>
         </div>
 
-        {mode === 'edit' && !candidate && (
-          <div className="ge-banner edit">
-            <window.GEIcon kind="pencil" size={13}></window.GEIcon>
-            <span>Edit mode — drag a bar to move it, drag an edge to resize, or click for exact dates. Hit <b>Save plan</b> when you're done.</span>
-          </div>
-        )}
         {candidate && (
           <div className="ge-banner cand">
             <window.GEIcon kind="check" size={13} sw={2.5}></window.GEIcon>
@@ -723,9 +717,7 @@ var GANTT_CONFIG = {
             ? <span className={'ge-toast ' + toast.tone}>{toast.text}</span>
             : <span>{candidate
                 ? 'Click any bar to see what changed.'
-                : mode === 'edit'
-                  ? 'Drag bars to move · drag edges to resize · click a bar for exact dates.'
-                  : 'Click a bar for details or to mark a process complete.'}</span>}
+                : 'Drag a bar to move it · drag an edge to resize · click a bar for exact dates or to mark complete.'}</span>}
         </div>
       </div>
     );
