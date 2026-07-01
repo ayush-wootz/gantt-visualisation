@@ -55,15 +55,15 @@
   // Completion-date classification: matches plan / off-plan-in-window / beyond window.
   function GEClassifyCompletion(p, win, v) {
     const GD = window.GanttEditData;
-    if (v === p.end) return { tone: 'ok', text: 'Matches the planned finish — saved directly.' };
+    if (v === p.end) return { tone: 'ok', text: 'Matches the planned finish.' };
     if (GD.toMs(v) <= GD.toMs(win.end)) {
       const early = GD.toMs(v) < GD.toMs(p.end);
-      return { tone: 'ok', text: 'Finished ' + (early ? 'earlier than planned' : 'a little later than planned') + ' (planned ' + GD.fmt(p.end) + ') — saved, the plan adjusts.' };
+      return { tone: 'ok', text: 'Finished ' + (early ? 'earlier than planned' : 'a little later than planned') + ' (planned ' + GD.fmt(p.end) + ') — staged, applies on save.' };
     }
-    return { tone: 'info', text: 'Finishes past the Phase ' + p.phase + ' plan — later steps will be rescheduled when you save.' };
+    return { tone: 'info', text: 'Finishes past the Phase ' + p.phase + ' plan — later steps reschedule when you save.' };
   }
 
-  // ── popover: view mode, incomplete ───────────────────────────────────────
+  // ── popover: view mode, incomplete (LEGACY — no longer used, see GEPopEditFull)
   function GEPopView({ p, win, today, expandInit, onComplete, onEdit, onClose }) {
     const GD = window.GanttEditData;
     const [open, setOpen] = React.useState(!!expandInit);
@@ -89,6 +89,58 @@
     );
   }
 
+  // ── popover: incomplete bar — dates + mark-complete in one (always editable)
+  function GEPopEditFull({ p, cur, win, staged, minStart, today, onApply, onClear, onComplete, onClose }) {
+    const GD = window.GanttEditData;
+    const [s, setS] = React.useState(cur.start);
+    const [e2, setE2] = React.useState(cur.end);
+    const [compOpen, setCompOpen] = React.useState(false);
+    const [v, setV] = React.useState(today);
+    const err = GD.toMs(e2) < GD.toMs(s);
+    const out = !err && (GD.toMs(s) < GD.toMs(win.start) || GD.toMs(e2) > GD.toMs(win.end));
+    const blocked = !err && minStart && GD.toMs(s) < GD.toMs(minStart);
+    const note = GEClassifyCompletion(p, win, v);
+    const isPendingDone = staged && staged.done;
+
+    // A bar with a staged completion shows the pending state + a way to clear it.
+    if (isPendingDone) {
+      return (
+        <div>
+          <div className="ge-pop-ttl"><span>{p.name}</span><span className="ge-x" onClick={onClose}>×</span></div>
+          <div className="ge-prow"><span>Completing on</span><b style={{ color: '#fde68a' }}>{GD.fmt(staged.completedOn || staged.end)}</b></div>
+          <div className="ge-note warn">Pending completion — save the plan to apply.</div>
+          <button className="ge-pbtn" onClick={onClear}>Clear completion</button>
+        </div>
+      );
+    }
+
+    return (
+      <div>
+        <div className="ge-pop-ttl"><span>{p.name}</span><span className="ge-x" onClick={onClose}>×</span></div>
+        <div className="ge-df"><label>Start</label><input type="date" value={s} onChange={(e) => setS(e.target.value)}></input></div>
+        <div className="ge-df"><label>End</label><input type="date" value={e2} onChange={(e) => setE2(e.target.value)}></input></div>
+        {err && <div className="ge-note err">End must be on or after start.</div>}
+        {blocked && <div className="ge-note err">Phase {p.phase} can’t start before Phase {p.phase - 1} finishes ({GD.fmt(minStart)}). Move a Phase {p.phase - 1} process earlier first.</div>}
+        {!err && !blocked && (out
+          ? <div className="ge-note warn">Later steps will shift to fit this — applied when you save the plan.</div>
+          : <div className="ge-note ok">Other steps stay unchanged.</div>)}
+        <button className="ge-pbtn solid" disabled={err || !!blocked} onClick={() => onApply(s, e2)}>Apply change</button>
+        {staged && <button className="ge-pbtn" onClick={onClear}>Clear change</button>}
+
+        <div className="ge-pop-div"></div>
+        {!compOpen ? (
+          <button className="ge-pbtn" onClick={() => setCompOpen(true)}><GEIcon kind="check" size={12} sw={2.5}></GEIcon> Mark complete</button>
+        ) : (
+          <div>
+            <div className="ge-df"><label>Done on</label><input type="date" value={v} min={p.start} max={today} onChange={(e) => setV(e.target.value)}></input></div>
+            <div className={'ge-note ' + note.tone}>{note.text}</div>
+            <button className="ge-pbtn solid" onClick={() => onComplete(v)}>Confirm completion</button>
+          </div>
+        )}
+      </div>
+    );
+  }
+
   // ── popover: view mode, completed ────────────────────────────────────────
   function GEPopDone({ p, onReopen, onClose }) {
     const GD = window.GanttEditData;
@@ -106,7 +158,7 @@
     );
   }
 
-  // ── popover: edit mode, completed (locked) ───────────────────────────────
+  // ── popover: edit mode, completed (locked) — LEGACY, no longer used ──────
   function GEPopLocked({ p, onReopen, onClose }) {
     const GD = window.GanttEditData;
     return (
@@ -122,7 +174,7 @@
     );
   }
 
-  // ── popover: edit mode, date editor ──────────────────────────────────────
+  // ── popover: edit mode, date editor — LEGACY, superseded by GEPopEditFull ─
   function GEPopEdit({ p, cur, win, isStaged, minStart, onApply, onClear, onClose }) {
     const GD = window.GanttEditData;
     const [s, setS] = React.useState(cur.start);
@@ -172,7 +224,7 @@
       .ge-root{font-family:ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:#171717;color:#e5e7eb;padding:0;box-sizing:border-box;min-height:100vh;display:flex;flex-direction:column}
       .ge-ribbon{position:fixed;bottom:12px;right:14px;z-index:50;font-size:10px;font-weight:700;letter-spacing:1.5px;padding:4px 10px;border-radius:999px;background:rgba(245,158,11,0.15);color:#fde68a;border:1px solid rgba(245,158,11,0.35)}
       .ge-top{position:sticky;top:0;z-index:40;background:#171717;padding:16px 18px;border-bottom:1px solid #262626;display:flex;justify-content:space-between;align-items:center;gap:14px;flex-wrap:wrap;margin-bottom:0}
-      .ge-actions{display:flex;gap:8px;align-items:center}
+      .ge-actions{display:flex;gap:8px;align-items:center;min-height:32px}
       .ge-btn{font-size:12px;font-weight:600;padding:6px 12px;border-radius:7px;border:1px solid #3f3f46;background:#1f1f1f;color:#d4d4d8;cursor:pointer;display:inline-flex;align-items:center;gap:6px;white-space:nowrap}
       .ge-btn:hover{background:#262626}
       .ge-btn:disabled{opacity:.35;cursor:default;pointer-events:none}
@@ -206,17 +258,32 @@
       .ge-mini{position:absolute;transform:translateY(-50%);font-size:9.5px;font-weight:800;letter-spacing:.4px;padding:3px 7px;border-radius:4px;background:#ef4444;color:#fff;white-space:nowrap;pointer-events:none}
       .ge-nudge{position:absolute;transform:translateY(-50%);font-size:9.5px;font-weight:700;padding:2px 7px;border-radius:4px;background:rgba(245,158,11,.14);border:1px solid rgba(245,158,11,.28);color:#fde68a;white-space:nowrap;pointer-events:none}
       .ge-tag{position:absolute;transform:translateY(-50%);font-size:9px;font-weight:800;letter-spacing:.8px;padding:2px 6px;border-radius:4px;background:rgba(245,158,11,.14);border:1px solid rgba(245,158,11,.35);color:#fde68a;white-space:nowrap;pointer-events:none;display:inline-flex;align-items:center;gap:3px}
+
+      /* ── editable bar hit + hover affordances ─────────────────────────── */
       .ge-hit{position:absolute;border-radius:6px;z-index:5;cursor:pointer;touch-action:none}
       .ge-hit.ge-editable{cursor:grab}
       .ge-hit.ge-editable:active{cursor:grabbing}
-      .ge-hit.ge-editable:hover{background:rgba(255,255,255,.045)}
-      .ge-handle{position:absolute;top:50%;transform:translateY(-50%);width:6px;height:14px;border-radius:3px;background:rgba(255,255,255,.5);opacity:0;transition:opacity .12s;cursor:col-resize}
-      .ge-hit.ge-editable:hover .ge-handle{opacity:1}
-      .ge-handle.l{left:2px}.ge-handle.r{right:2px}
+      /* hover frame: overlays the bar exactly (hit is 7px taller top+bottom) */
+      .ge-frame{position:absolute;left:0;right:0;border-radius:5px;pointer-events:none;background:transparent;box-shadow:none;transition:box-shadow .12s,background .12s}
+      .ge-hit.ge-editable:hover .ge-frame,.ge-hit.ge-editable:active .ge-frame{background:rgba(245,158,11,.08);box-shadow:inset 0 0 0 1.5px #fbbf24}
+      /* edge resize handles: brighter amber brackets with a soft halo */
+      .ge-handle{position:absolute;top:50%;transform:translateY(-50%);width:4px;height:16px;border-radius:2px;background:#fbbf24;box-shadow:0 0 0 3px rgba(245,158,11,.18);opacity:0;transition:opacity .12s;cursor:col-resize}
+      .ge-hit.ge-editable:hover .ge-handle,.ge-hit.ge-editable:active .ge-handle{opacity:1}
+      .ge-handle.l{left:3px}.ge-handle.r{right:3px}
+      /* center move grip: 2×3 dots signalling "grab to move" */
+      .ge-grip{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);display:grid;grid-template-columns:2px 2px;gap:2px;opacity:0;transition:opacity .12s;pointer-events:none}
+      .ge-hit.ge-editable:hover .ge-grip{opacity:.85}
+      .ge-grip i{display:block;width:2px;height:2px;border-radius:50%;background:rgba(255,255,255,.65)}
+      /* one-line hover hint above the bar (hidden while dragging) */
+      .ge-draghint{position:absolute;left:50%;bottom:100%;transform:translate(-50%,-5px);background:#fafafa;color:#111;font-size:10px;font-weight:600;padding:2px 7px;border-radius:5px;white-space:nowrap;opacity:0;transition:opacity .12s;pointer-events:none;box-shadow:0 4px 14px rgba(0,0,0,.4)}
+      .ge-hit.ge-editable:hover .ge-draghint{opacity:1}
+      .ge-hit.ge-editable:active .ge-draghint{opacity:0}
+
       .ge-tip{position:absolute;z-index:9;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:10.5px;background:#fafafa;color:#111;padding:3px 9px;border-radius:5px;white-space:nowrap;transform:translateY(-100%);font-weight:600;pointer-events:none;box-shadow:0 4px 14px rgba(0,0,0,.4)}
       .ge-tip .ext{color:#d97706;font-weight:700}
       .ge-pop{position:absolute;z-index:20;background:#1b1b1d;border:1px solid #333;border-radius:10px;padding:12px;font-size:12px;box-shadow:0 12px 32px rgba(0,0,0,.55)}
       .ge-pop-ttl{display:flex;justify-content:space-between;align-items:center;font-size:13px;font-weight:600;color:#fafafa;margin-bottom:8px;gap:8px}
+      .ge-pop-div{height:1px;background:#2c2c30;margin:9px -12px 0}
       .ge-x{cursor:pointer;color:#6b7280;font-size:15px;line-height:1;padding:0 2px;flex-shrink:0}
       .ge-x:hover{color:#e5e7eb}
       .ge-sub{font-size:10.5px;color:#8b8b93;margin-bottom:7px;line-height:1.45}
@@ -252,6 +319,6 @@
 
   Object.assign(window, {
     GE_C, GEIcon, GEChip, GEStyles, GEClassifyCompletion,
-    GEPopView, GEPopDone, GEPopLocked, GEPopEdit, GEPopCandidate,
+    GEPopView, GEPopDone, GEPopLocked, GEPopEdit, GEPopEditFull, GEPopCandidate,
   });
 })();
