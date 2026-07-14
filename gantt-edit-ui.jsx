@@ -249,6 +249,7 @@
       .ge-card.approval{background:#1a1200 !important;border-color:rgba(245,158,11,0.55) !important;box-shadow:inset 0 0 120px rgba(245,158,11,0.08) !important}
       .ge-layer{position:relative;margin:0 20px}
       .ge-axis-sticky{position:sticky;top:0;z-index:15;height:48px;margin:0 20px -48px;background:#0e0e0e;border-bottom:1px solid #1c1c1c;box-shadow:0 8px 12px -8px rgba(0,0,0,.55);pointer-events:none}
+      .ge-axis-sticky.approval{background:#1a1200;border-bottom-color:rgba(245,158,11,.35)}
       .ge-grid{position:absolute;top:48px;bottom:12px;width:1px;background:#222;pointer-events:none}
       .ge-axis-month{position:absolute;top:8px;font-size:10px;color:#6b7280;font-weight:700;letter-spacing:1.5px;pointer-events:none}
       .ge-axis-day{position:absolute;top:31px;font-size:11px;color:#9ca3af;font-weight:500;transform:translateX(-50%);pointer-events:none}
@@ -257,7 +258,7 @@
       .ge-badge{position:absolute;transform:translateX(-50%);font-size:10px;font-weight:800;letter-spacing:.5px;padding:3px 9px;border-radius:4px;white-space:nowrap;pointer-events:none}
       .ge-row{position:absolute;left:0;right:0}
       .ge-phase-rule{position:absolute;left:0;right:0;top:0;height:1px;background:#242424}
-      .ge-phase-label{position:absolute;left:0;font-size:10px;font-weight:700;letter-spacing:2px;color:#71717a}
+      .ge-phase-label{position:absolute;left:0;font-size:calc(10px * var(--ge-scale, 1));font-weight:700;letter-spacing:2px;color:#71717a}
       .ge-seg{position:absolute;box-sizing:border-box;pointer-events:none}
       .ge-stripe{background-image:repeating-linear-gradient(45deg,rgba(239,68,68,.30) 0 2px,rgba(239,68,68,.06) 2px 6px);border:1.5px solid #ef4444}
       .ge-stripe-amber{background-image:repeating-linear-gradient(45deg,rgba(245,158,11,.22) 0 2px,rgba(245,158,11,.04) 2px 6px)}

@@ -21,6 +21,7 @@ var GANTT_CONFIG = {
 
   const ROW_H = 34, ROW_DONE = 22, PHASE_H = 26, BAR_H = 22, BAR_DONE = 8;
   const TOP = 56, GROUP_GAP = 8, BOT = 16;
+  const MAX_ZOOM = 1.7;
 
   function GanttEdit({ forced, embed }) {
     const GD = window.GanttEditData;
@@ -48,17 +49,21 @@ var GANTT_CONFIG = {
     const [drag, setDrag] = useState(() => fx.fakeDrag || null);
     const [toast, setToast] = useState(() => fx.toast || null);
     const [cardW, setCardW] = useState(1200);
+    const [cardH, setCardH] = useState(null); // null until measured — keeps zoom at 1x till then
     const [full, setFull] = useState(false);
     const cardRef = useRef(null);
     const rootRef = useRef(null);
     const dragRef = useRef(null);
     const clickGuard = useRef(false);
     const timersRef = useRef([]);
+    const didAutoScroll = useRef(false);
 
     useEffect(() => {
       const el = cardRef.current;
       if (!el) return;
-      const ro = new ResizeObserver((es) => { for (const en of es) setCardW(en.contentRect.width); });
+      const ro = new ResizeObserver((es) => {
+        for (const en of es) { setCardW(en.contentRect.width); setCardH(en.contentRect.height); }
+      });
       ro.observe(el);
       return () => ro.disconnect();
     }, []);
@@ -125,6 +130,32 @@ var GANTT_CONFIG = {
     const dayPx = layerW / span;
     const todayPct = pct(D.today), dispPct = pct(D.dispatch);
 
+    // ── zoom: if the card has more vertical room than the plan needs at its
+    // base size, scale row/bar/phase sizing up to fill it (capped so a
+    // 1-2 phase plan doesn't balloon absurdly). Never scales below 1x, and
+    // stays at 1x until cardH has a real measured value. ───────────────────
+    function measureContentHeight(rowH, rowDone, phaseH, groupGap) {
+      let y = TOP, last = -1;
+      for (const p of sorted) {
+        if (p.phase !== last) {
+          if (last !== -1) y += groupGap;
+          y += phaseH;
+          last = p.phase;
+        }
+        y += p.done ? rowDone : rowH;
+      }
+      return Math.max(y + BOT, TOP + 140);
+    }
+    const naturalH = measureContentHeight(ROW_H, ROW_DONE, PHASE_H, GROUP_GAP);
+    const zoom = cardH && naturalH > 0 ? Math.max(1, Math.min(MAX_ZOOM, cardH / naturalH)) : 1;
+    const Z_ROW_H = Math.round(ROW_H * zoom);
+    const Z_ROW_DONE = Math.round(ROW_DONE * zoom);
+    const Z_PHASE_H = Math.round(PHASE_H * zoom);
+    const Z_BAR_H = Math.round(BAR_H * zoom);
+    const Z_BAR_DONE = Math.round(BAR_DONE * zoom);
+    const Z_GROUP_GAP = Math.round(GROUP_GAP * zoom);
+    const Z_BOT = Math.round(BOT * zoom);
+
     // ── row layout ────────────────────────────────────────────────────────
     const layout = [];
     let chartH = TOP + 140;
@@ -132,26 +163,30 @@ var GANTT_CONFIG = {
       let y = TOP, last = -1;
       for (const p of sorted) {
         if (p.phase !== last) {
-          if (last !== -1) y += GROUP_GAP;
+          if (last !== -1) y += Z_GROUP_GAP;
           layout.push({ kind: 'phase', num: p.phase, label: p.phaseLabel || ('PHASE ' + p.phase), y });
-          y += PHASE_H;
+          y += Z_PHASE_H;
           last = p.phase;
         }
-        const h = p.done ? ROW_DONE : ROW_H;
+        const h = p.done ? Z_ROW_DONE : Z_ROW_H;
         layout.push({ kind: 'proc', p, y, h });
         y += h;
       }
-      chartH = Math.max(y + BOT, chartH);
+      chartH = Math.max(y + Z_BOT, chartH);
     }
 
     // ── on open, scroll to whatever needs attention first:
     // 1) the earliest incomplete step that's already overdue (past its end,
     //    not done) — even if that's outside today's phase;
     // 2) else the phase whose window contains today (nearest phase by date
-    //    if today falls outside every window) ─────────────────────────────
+    //    if today falls outside every window)
+    // Waits for a real cardH measurement (not just mount) so it scrolls
+    // against the final zoomed row positions, not the pre-zoom 1x layout. ──
     useEffect(() => {
+      if (didAutoScroll.current || cardH == null) return;
       const el = cardRef.current;
       if (!el || !phases.length) return;
+      didAutoScroll.current = true;
       const overdue = sorted.find((p) => GD.status(p, D.today) === 'delayed');
       if (overdue) {
         const row = layout.find((r) => r.kind === 'proc' && r.p.id === overdue.id);
@@ -166,7 +201,7 @@ var GANTT_CONFIG = {
       });
       const row = layout.find((r) => r.kind === 'phase' && r.num === target);
       if (row) el.scrollTop = Math.max(0, row.y - 60);
-    }, []);
+    }, [cardH]);
 
     const winOf = (num) => phases.find((w) => w.num === num) || { num, start: tMin, end: tMax };
     const outOf = (p, s, e) => {
@@ -499,7 +534,7 @@ var GANTT_CONFIG = {
       const stt = GD.status({ done: p.done, start: ds, end: de }, D.today);
       const left = pct(ds), width = wPct(ds, de);
       const rightPct = left + width;
-      const barH = p.done ? BAR_DONE : BAR_H;
+      const barH = p.done ? Z_BAR_DONE : Z_BAR_H;
       const barY = (row.h - barH) / 2;
       const edited = isDrag || !!st || !!candGhost;
       const ghost = (isDrag || st) ? { start: p.start, end: p.end } : candGhost;
@@ -560,7 +595,7 @@ var GANTT_CONFIG = {
         // extras.push(<span key="lt" className="ge-nudge" style={{ left: 'calc(' + todayPct + '% + 6px)', top: row.h / 2 }}>{lateN}d over · update?</span>);
       }
 
-      const est = p.name.length * 6.6 + 20;
+      const est = (p.name.length * 6.6 + 20) * zoom;
       const fits = (width / 100) * layerW > est;
       let labColor = '#d4d4d8', deco, labWeight = 600;
       if (stt === 'completed') { labColor = '#a1a1aa'; deco = undefined; labWeight = 500; }
@@ -577,7 +612,7 @@ var GANTT_CONFIG = {
           : { left: 'calc(' + left + '% - 8px)', transform: 'translate(-100%,-50%)' };
       }
       const label = (
-        <span key="lb" className="ge-label" style={Object.assign({ top: row.h / 2, color: labColor, fontWeight: labWeight, textDecoration: deco || 'none', fontSize: 12.5 }, labStyle)}>
+        <span key="lb" className="ge-label" style={Object.assign({ top: row.h / 2, color: labColor, fontWeight: labWeight, textDecoration: deco || 'none', fontSize: 12.5 * zoom }, labStyle)}>
           {p.name}
         </span>
       );
@@ -687,7 +722,7 @@ var GANTT_CONFIG = {
     }
 
     return (
-      <div className="ge-root" ref={rootRef}
+      <div className="ge-root" ref={rootRef} style={{ '--ge-scale': zoom }}
         onClick={() => setPop(null)}
         onPointerDown={() => { if (drag && !dragRef.current) setDrag(null); }}>
         <window.GEStyles></window.GEStyles>
@@ -731,7 +766,7 @@ var GANTT_CONFIG = {
         )}
 
         <div className={'ge-card' + (candidate ? ' approval' : '')} ref={cardRef}>
-          <div className="ge-axis-sticky">
+          <div className={'ge-axis-sticky' + (candidate ? ' approval' : '')}>
             {months.map((m, i) => <div key={'m' + i} className="ge-axis-month" style={{ left: m.x + '%' }}>{m.label}</div>)}
             {ticks.map((t, i) => <div key={'d' + i} className="ge-axis-day" style={{ left: t.x + '%' }}>{t.label}</div>)}
             <div className="ge-badge" style={{ left: dispPct + '%', top: 5, background: C.dispatch, color: '#04150d', zIndex: 6 }}>DISPATCH · {GD.fmt(D.dispatch).toUpperCase()}</div>
@@ -746,9 +781,9 @@ var GANTT_CONFIG = {
             {layout.map((r) => {
               if (r.kind === 'phase') {
                 return (
-                  <div key={'ph' + r.num} className="ge-row" style={{ top: r.y, height: PHASE_H }}>
+                  <div key={'ph' + r.num} className="ge-row" style={{ top: r.y, height: Z_PHASE_H }}>
                     <div className="ge-phase-rule"></div>
-                    <div className="ge-phase-label" style={{ top: 9 }}>{r.label || ('PHASE ' + r.num)}</div>
+                    <div className="ge-phase-label" style={{ top: Math.round(9 * zoom) }}>{r.label || ('PHASE ' + r.num)}</div>
                   </div>
                 );
               }
