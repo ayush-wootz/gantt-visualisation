@@ -48,7 +48,9 @@ var GANTT_CONFIG = {
     const [drag, setDrag] = useState(() => fx.fakeDrag || null);
     const [toast, setToast] = useState(() => fx.toast || null);
     const [cardW, setCardW] = useState(1200);
+    const [full, setFull] = useState(false);
     const cardRef = useRef(null);
+    const rootRef = useRef(null);
     const dragRef = useRef(null);
     const clickGuard = useRef(false);
     const timersRef = useRef([]);
@@ -61,6 +63,36 @@ var GANTT_CONFIG = {
       return () => ro.disconnect();
     }, []);
     useEffect(() => () => { timersRef.current.forEach((t) => { clearTimeout(t); clearInterval(t); }); }, []);
+
+    // ── fullscreen (View Full) — real Fullscreen API, not a CSS trick, so it
+    // can escape the small iframe box Glide's Web Embed gives us ────────────
+    useEffect(() => {
+      const onFsChange = () => setFull(!!(document.fullscreenElement || document.webkitFullscreenElement));
+      document.addEventListener('fullscreenchange', onFsChange);
+      document.addEventListener('webkitfullscreenchange', onFsChange);
+      return () => {
+        document.removeEventListener('fullscreenchange', onFsChange);
+        document.removeEventListener('webkitfullscreenchange', onFsChange);
+      };
+    }, []);
+    function toggleFull() {
+      const isFull = document.fullscreenElement || document.webkitFullscreenElement;
+      if (isFull) {
+        const exit = document.exitFullscreen || document.webkitExitFullscreen;
+        if (exit) exit.call(document);
+        return;
+      }
+      const el = rootRef.current;
+      const req = el && (el.requestFullscreen || el.webkitRequestFullscreen);
+      if (!req) {
+        setToast({ tone: 'err', text: 'Full screen isn’t available here — this embed’s browser/container doesn’t support it.' });
+        return;
+      }
+      const res = req.call(el);
+      if (res && res.catch) {
+        res.catch(() => setToast({ tone: 'err', text: 'Full screen was blocked by the embed container.' }));
+      }
+    }
 
     // ── derived plan + time scale ─────────────────────────────────────────
     const shown = candidate ? candidate.procs : procs;
@@ -111,6 +143,30 @@ var GANTT_CONFIG = {
       }
       chartH = Math.max(y + BOT, chartH);
     }
+
+    // ── on open, scroll to whatever needs attention first:
+    // 1) the earliest incomplete step that's already overdue (past its end,
+    //    not done) — even if that's outside today's phase;
+    // 2) else the phase whose window contains today (nearest phase by date
+    //    if today falls outside every window) ─────────────────────────────
+    useEffect(() => {
+      const el = cardRef.current;
+      if (!el || !phases.length) return;
+      const overdue = sorted.find((p) => GD.status(p, D.today) === 'delayed');
+      if (overdue) {
+        const row = layout.find((r) => r.kind === 'proc' && r.p.id === overdue.id);
+        if (row) { el.scrollTop = Math.max(0, row.y - 60); return; }
+      }
+      const todayMs = GD.toMs(D.today);
+      let target = phases[0].num, bestDist = Infinity;
+      phases.forEach((w) => {
+        const s = GD.toMs(w.start), e = GD.toMs(w.end);
+        const dist = todayMs < s ? s - todayMs : todayMs > e ? todayMs - e : 0;
+        if (dist < bestDist) { bestDist = dist; target = w.num; }
+      });
+      const row = layout.find((r) => r.kind === 'phase' && r.num === target);
+      if (row) el.scrollTop = Math.max(0, row.y - 60);
+    }, []);
 
     const winOf = (num) => phases.find((w) => w.num === num) || { num, start: tMin, end: tMax };
     const outOf = (p, s, e) => {
@@ -501,7 +557,7 @@ var GANTT_CONFIG = {
         segs.push(<div key="b" className="ge-seg" style={{ left: left + '%', width: width + '%', top: barY, height: barH, borderRadius: 5, border: '1.5px solid ' + C.active, background: 'rgba(245,158,11,0.10)' }}></div>);
         if (todayPct > rightPct) segs.push(<div key="o" className="ge-seg ge-stripe-amber" style={{ left: rightPct + '%', width: (todayPct - rightPct) + '%', top: barY, height: barH, borderRadius: 5, borderLeft: 'none' }}></div>);
         const lateN = GD.daysBetween(de, D.today);
-        extras.push(<span key="lt" className="ge-nudge" style={{ left: 'calc(' + todayPct + '% + 6px)', top: row.h / 2 }}>{lateN}d over · update?</span>);
+        // extras.push(<span key="lt" className="ge-nudge" style={{ left: 'calc(' + todayPct + '% + 6px)', top: row.h / 2 }}>{lateN}d over · update?</span>);
       }
 
       const est = p.name.length * 6.6 + 20;
@@ -631,7 +687,7 @@ var GANTT_CONFIG = {
     }
 
     return (
-      <div className="ge-root"
+      <div className="ge-root" ref={rootRef}
         onClick={() => setPop(null)}
         onPointerDown={() => { if (drag && !dragRef.current) setDrag(null); }}>
         <window.GEStyles></window.GEStyles>
@@ -643,6 +699,10 @@ var GANTT_CONFIG = {
             <span className="ge-count-lab">{dtd >= 0 ? 'days to dispatch' : 'days past dispatch'}</span>
           </div>
           <div className="ge-actions">
+            <button className="ge-btn" onClick={toggleFull} title={full ? 'Exit full screen' : 'View full screen'}>
+              <window.GEIcon kind={full ? 'minimize' : 'expand'} size={12} sw={2.5}></window.GEIcon>
+              {full ? 'Exit Full' : 'View Full'}
+            </button>
             {candidate ? (
               <React.Fragment>
                 <button className="ge-btn" onClick={discard}>Discard</button>
@@ -671,14 +731,17 @@ var GANTT_CONFIG = {
         )}
 
         <div className={'ge-card' + (candidate ? ' approval' : '')} ref={cardRef}>
-          <div className="ge-layer" style={{ height: chartH }}>
-            {ticks.map((t, i) => <div key={'g' + i} className="ge-grid" style={{ left: t.x + '%' }}></div>)}
+          <div className="ge-axis-sticky">
             {months.map((m, i) => <div key={'m' + i} className="ge-axis-month" style={{ left: m.x + '%' }}>{m.label}</div>)}
             {ticks.map((t, i) => <div key={'d' + i} className="ge-axis-day" style={{ left: t.x + '%' }}>{t.label}</div>)}
+            <div className="ge-badge" style={{ left: dispPct + '%', top: 5, background: C.dispatch, color: '#04150d', zIndex: 6 }}>DISPATCH · {GD.fmt(D.dispatch).toUpperCase()}</div>
+            <div className="ge-badge" style={{ left: todayPct + '%', top: 5, background: '#fff', color: '#0b0d12', zIndex: 7 }}>TODAY · {GD.fmt(D.today).toUpperCase()}</div>
+          </div>
+          <div className="ge-layer" style={{ height: chartH }}>
+            {ticks.map((t, i) => <div key={'g' + i} className="ge-grid" style={{ left: t.x + '%' }}></div>)}
 
             <div className="ge-zone" style={{ left: dispPct + '%', width: (100 - dispPct) + '%', top: 48, bottom: 10 }}></div>
             <div className="ge-vline" style={{ left: dispPct + '%', top: 48, bottom: 8, width: 2, marginLeft: -1, background: C.dispatch, boxShadow: '0 0 10px rgba(16,185,129,.4)', zIndex: 3 }}></div>
-            <div className="ge-badge" style={{ left: dispPct + '%', top: 5, background: C.dispatch, color: '#04150d', zIndex: 6 }}>DISPATCH · {GD.fmt(D.dispatch).toUpperCase()}</div>
 
             {layout.map((r) => {
               if (r.kind === 'phase') {
@@ -694,7 +757,6 @@ var GANTT_CONFIG = {
 
             <div className="ge-vline" style={{ left: todayPct + '%', top: 44, bottom: 8, width: 10, marginLeft: -5, background: 'rgba(255,255,255,.05)', zIndex: 4 }}></div>
             <div className="ge-vline" style={{ left: todayPct + '%', top: 44, bottom: 8, width: 2, marginLeft: -1, background: '#fff', zIndex: 4 }}></div>
-            <div className="ge-badge" style={{ left: todayPct + '%', top: 5, background: '#fff', color: '#0b0d12', zIndex: 7 }}>TODAY · {GD.fmt(D.today).toUpperCase()}</div>
 
             {wallLine}
             {tip}

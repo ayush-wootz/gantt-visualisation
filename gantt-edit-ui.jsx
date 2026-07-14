@@ -2,11 +2,10 @@
 // colors, icons, chips, popover contents, and the stylesheet.
 
 (function () {
-  // 4 colours only — each has one meaning, nothing else uses them.
   // Amber = active / pending edits / approval tint
   // Red   = past-dispatch only (real deadline risk)
   // Gray  = completed / upcoming
-  // Green = dispatch marker
+  // Green = dispatch marker, and the "Completed" action in GEPopEditFull
   const GE_C = {
     bg: '#171717', card: '#0e0e0e', line: '#262626',
     completed: '#52525b', completedTx: '#71717a',
@@ -23,6 +22,8 @@
     spark: 'M12 3l1.9 5.7 5.6 2.3-5.6 2.3L12 19l-1.9-5.7L4.5 11l5.6-2.3L12 3z',
     lock: 'M7 11V7a5 5 0 0 1 10 0v4M5 11h14v10H5z',
     chart: 'M3 3v18h18M8 14v4M13 9v9M18 12v6',
+    expand: 'M8 3H5a2 2 0 0 0-2 2v3M21 8V5a2 2 0 0 0-2-2h-3M3 16v3a2 2 0 0 0 2 2h3M16 21h3a2 2 0 0 0 2-2v-3',
+    minimize: 'M8 3v3a2 2 0 0 1-2 2H3M21 8h-3a2 2 0 0 1-2-2V3M3 16h3a2 2 0 0 1 2 2v3M16 21v-3a2 2 0 0 1 2-2h3',
   };
 
   function GEIcon({ kind, size, color, sw }) {
@@ -98,9 +99,16 @@
     const [v, setV] = React.useState(today);
     const err = GD.toMs(e2) < GD.toMs(s);
     const out = !err && (GD.toMs(s) < GD.toMs(win.start) || GD.toMs(e2) > GD.toMs(win.end));
-    const blocked = !err && minStart && GD.toMs(s) < GD.toMs(minStart);
+    // Only block on the previous phase's wall if the user actually moved the
+    // start earlier — a start that was already before minStart (a pre-existing
+    // overlap in the data) shouldn't lock out unrelated edits like the end date.
+    const startChanged = s !== cur.start;
+    const blocked = !err && startChanged && minStart && GD.toMs(s) < GD.toMs(minStart);
     const note = GEClassifyCompletion(p, win, v);
     const isPendingDone = staged && staged.done;
+    const noChange = s === cur.start && e2 === cur.end;
+    const applyActive = !err && !blocked && !noChange;
+    const completedDisabled = applyActive || !!staged;
 
     // A bar with a staged completion shows the pending state + a way to clear it.
     if (isPendingDone) {
@@ -124,19 +132,19 @@
         {!err && !blocked && (out
           ? <div className="ge-note warn">Later steps will shift to fit this — applied when you save the plan.</div>
           : <div className="ge-note ok">Other steps stay unchanged.</div>)}
-        <button className="ge-pbtn solid" disabled={err || !!blocked} onClick={() => onApply(s, e2)}>Apply change</button>
-        {staged && <button className="ge-pbtn" onClick={onClear}>Clear change</button>}
-
-        <div className="ge-pop-div"></div>
         {!compOpen ? (
-          <button className="ge-pbtn" onClick={() => setCompOpen(true)}><GEIcon kind="check" size={12} sw={2.5}></GEIcon> Mark complete</button>
+          <div className="ge-pbtn-row">
+            <button className="ge-pbtn" disabled={err || !!blocked || noChange} onClick={() => onApply(s, e2)}>Apply change</button>
+            <button className="ge-pbtn green" disabled={completedDisabled} onClick={() => setCompOpen(true)}><GEIcon kind="check" size={12} sw={2.5} color="#34d399"></GEIcon> Completed</button>
+          </div>
         ) : (
           <div>
             <div className="ge-df"><label>Done on</label><input type="date" value={v} min={p.start} max={today} onChange={(e) => setV(e.target.value)}></input></div>
             <div className={'ge-note ' + note.tone}>{note.text}</div>
-            <button className="ge-pbtn solid" onClick={() => onComplete(v)}>Confirm completion</button>
+            <button className="ge-pbtn green" onClick={() => onComplete(v)}>Confirm completion</button>
           </div>
         )}
+        {staged && <button className="ge-pbtn" onClick={onClear}>Clear change</button>}
       </div>
     );
   }
@@ -221,15 +229,15 @@
   function GEStyles() {
     return (
       <style>{`
-      .ge-root{font-family:ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:#171717;color:#e5e7eb;padding:0;box-sizing:border-box;min-height:100vh;display:flex;flex-direction:column}
+      .ge-root{font-family:ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:#171717;color:#e5e7eb;padding:0;box-sizing:border-box;height:100vh;overflow:hidden;display:flex;flex-direction:column}
       .ge-ribbon{position:fixed;bottom:12px;right:14px;z-index:50;font-size:10px;font-weight:700;letter-spacing:1.5px;padding:4px 10px;border-radius:999px;background:rgba(245,158,11,0.15);color:#fde68a;border:1px solid rgba(245,158,11,0.35)}
       .ge-top{position:sticky;top:0;z-index:40;background:#171717;padding:16px 18px;border-bottom:1px solid #262626;display:flex;justify-content:space-between;align-items:center;gap:14px;flex-wrap:wrap;margin-bottom:0}
-      .ge-actions{display:flex;gap:8px;align-items:center;min-height:32px}
+      .ge-actions{display:flex;gap:8px;align-items:center;min-height:32px;flex-wrap:wrap}
       .ge-btn{font-size:12px;font-weight:600;padding:6px 12px;border-radius:7px;border:1px solid #3f3f46;background:#1f1f1f;color:#d4d4d8;cursor:pointer;display:inline-flex;align-items:center;gap:6px;white-space:nowrap}
       .ge-btn:hover{background:#262626}
       .ge-btn:disabled{opacity:.35;cursor:default;pointer-events:none}
-      .ge-btn.solid{background:#fafafa;border-color:#fafafa;color:#111}
-      .ge-btn.solid:hover{background:#e4e4e7}
+      .ge-btn.solid{background:#d99e01;border-color:#d99e01;color:rgb(255, 255, 255)}
+      .ge-btn.solid:hover{background:#c58502;border-color:#c58502}
       .ge-count{display:inline-flex;align-items:baseline;gap:8px}
       .ge-count-num{font-size:28px;font-weight:800;letter-spacing:-0.03em;font-variant-numeric:tabular-nums;line-height:1}
       .ge-count-lab{font-size:11.5px;color:#9ca3af}
@@ -240,6 +248,7 @@
       .ge-card{position:relative;background:#0e0e0e;border:1px solid #262626;border-radius:0;overflow:hidden;box-shadow:inset 0 1px 0 rgba(255,255,255,0.02);flex:1;overflow:auto}
       .ge-card.approval{background:#1a1200 !important;border-color:rgba(245,158,11,0.55) !important;box-shadow:inset 0 0 120px rgba(245,158,11,0.08) !important}
       .ge-layer{position:relative;margin:0 20px}
+      .ge-axis-sticky{position:sticky;top:0;z-index:15;height:48px;margin:0 20px -48px;background:#0e0e0e;border-bottom:1px solid #1c1c1c;box-shadow:0 8px 12px -8px rgba(0,0,0,.55);pointer-events:none}
       .ge-grid{position:absolute;top:48px;bottom:12px;width:1px;background:#222;pointer-events:none}
       .ge-axis-month{position:absolute;top:8px;font-size:10px;color:#6b7280;font-weight:700;letter-spacing:1.5px;pointer-events:none}
       .ge-axis-day{position:absolute;top:31px;font-size:11px;color:#9ca3af;font-weight:500;transform:translateX(-50%);pointer-events:none}
@@ -293,7 +302,7 @@
       .ge-df label{font-size:9.5px;color:#6b7280;width:42px;flex:none;text-transform:uppercase;letter-spacing:.5px}
       .ge-df input{flex:1;background:transparent;border:none;color:#e5e7eb;font-family:inherit;font-size:12px;outline:none;color-scheme:dark;min-width:0}
       .ge-note{font-size:10.5px;line-height:1.5;margin-top:7px;padding:6px 8px;border-radius:6px;display:flex;gap:6px;align-items:flex-start}
-      .ge-note.ok{color:#86efac;background:rgba(16,185,129,.08)}
+      .ge-note.ok{color:#fafafa;background:rgb(207 208 208 / 8%)}
       .ge-note.warn{color:#fde68a;background:rgba(245,158,11,.09)}
       .ge-note.err{color:#fca5a5;background:rgba(239,68,68,.10)}
       .ge-pbtn{width:100%;margin-top:7px;text-align:center;padding:6px;border-radius:6px;font-size:11px;font-weight:600;cursor:pointer;border:1px solid #3f3f46;background:#222224;color:#d4d4d8;display:flex;align-items:center;justify-content:center;gap:6px;font-family:inherit}
@@ -301,6 +310,10 @@
       .ge-pbtn:disabled{opacity:.35;cursor:default;pointer-events:none}
       .ge-pbtn.solid{background:#d99e02;border-color:#d99e02;color:#fff}
       .ge-pbtn.solid:hover{background:#c58502;border-color:#c58502}
+      .ge-pbtn.green{background:rgba(16,185,129,.16);border-color:#383838;color:#6ee7b7}
+      .ge-pbtn.green:hover{background:rgba(16,185,129,.24)}
+      .ge-pbtn-row{display:flex;gap:7px;margin-top:7px}
+      .ge-pbtn-row .ge-pbtn{width:auto;flex:1;margin-top:0}
       .ge-locked{font-size:10.5px;color:#8b8b93;line-height:1.5;margin-top:7px;padding:6px 8px;background:#121214;border:1px solid #26262a;border-radius:6px;display:flex;gap:6px;align-items:flex-start}
       .ge-locked svg{margin-top:1px;flex-shrink:0}
       .ge-veil{position:absolute;inset:0;z-index:30;background:rgba(10,10,11,.82);backdrop-filter:blur(2px);display:flex;align-items:center;justify-content:center}
