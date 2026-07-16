@@ -11,9 +11,10 @@
 
 // ── CONFIG — set your endpoints here ──────────────────────────────────────
 var GANTT_CONFIG = {
-  SCHEDULE_URL:    'https://glide-gantt-ai-scheduler.onrender.com/schedule',
+  SCHEDULE_URL:    'https://gantt-visualisation-dev.onrender.com/schedule',
   SCHEDULE_SECRET: 'ayush_Wootz_2026',
   APPROVE_URL:     'https://glide-gantt-ai-scheduler.onrender.com/approve',
+  DISCARD_URL:     'https://gantt-visualisation-dev.onrender.com/discard',
 };
 
 (function () {
@@ -442,8 +443,35 @@ var GANTT_CONFIG = {
     }
 
     function discard() {
-      setCandidate(null); setPop(null);
-      setToast({ tone: 'warn', text: 'Update discarded — plan unchanged.' });
+      const meta = D.meta || {};
+
+      setVeil('Discarding update…');
+
+      fetch(GANTT_CONFIG.DISCARD_URL, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-schedule-secret': GANTT_CONFIG.SCHEDULE_SECRET,
+        },
+        body: JSON.stringify({
+          assembly_row_id: meta.assembly_row_id || '',
+          generated_by:    meta.generated_by    || '',
+        }),
+      })
+      .then(function(res) {
+        if (!res.ok) return res.text().then(function(t) { throw new Error('HTTP ' + res.status + ': ' + t); });
+      })
+      .then(function() {
+        setCandidate(null);
+        setPop(null);
+        setVeil(null);
+        setToast({ tone: 'warn', text: 'Update discarded — plan unchanged.' });
+      })
+      .catch(function(err) {
+        setVeil(null);
+        setToast({ tone: 'err', text: 'Discard failed: ' + err.message + ' — try again.' });
+        console.error('discard error:', err);
+      });
     }
 
     // ── drag ──────────────────────────────────────────────────────────────
@@ -733,21 +761,20 @@ var GANTT_CONFIG = {
             <span className="ge-count-num" style={{ color: dtd < 0 ? C.delayed : '#fafafa' }}>{Math.abs(dtd)}</span>
             <span className="ge-count-lab">{dtd >= 0 ? 'days to dispatch' : 'days past dispatch'}</span>
           </div>
-          <div className="ge-actions">
-            <button className="ge-btn" onClick={toggleFull} title={full ? 'Exit full screen' : 'View full screen'}>
-              <window.GEIcon kind={full ? 'minimize' : 'expand'} size={12} sw={2.5}></window.GEIcon>
-              {full ? 'Exit Full' : 'View Full'}
+          <div className={'ge-actions' + (full ? ' big' : '')}>
+            <button className="ge-btn icon-only" onClick={toggleFull} title={full ? 'Exit full screen' : 'View full screen'}>
+              <window.GEIcon kind={full ? 'minimize' : 'expand'} size={full ? 15 : 13} sw={2.5}></window.GEIcon>
             </button>
             {candidate ? (
               <React.Fragment>
                 <button className="ge-btn" onClick={discard}>Discard</button>
-                <button className="ge-btn solid" onClick={approve}><window.GEIcon kind="check" size={12} sw={2.5}></window.GEIcon> Approve plan</button>
+                <button className="ge-btn solid" onClick={approve}><window.GEIcon kind="check" size={full ? 13 : 12} sw={2.5}></window.GEIcon> Approve plan</button>
               </React.Fragment>
             ) : stagedN > 0 ? (
               <React.Fragment>
                 <button className="ge-btn" onClick={cancelChanges}>Cancel</button>
                 <button className="ge-btn solid" onClick={() => runRegen(staged)}>
-                  <window.GEIcon kind="check" size={12} sw={2.5}></window.GEIcon> Save plan ({stagedN})
+                  <window.GEIcon kind="check" size={full ? 13 : 12} sw={2.5}></window.GEIcon> Save plan ({stagedN})
                 </button>
               </React.Fragment>
             ) : null}

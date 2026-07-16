@@ -22,8 +22,8 @@
     spark: 'M12 3l1.9 5.7 5.6 2.3-5.6 2.3L12 19l-1.9-5.7L4.5 11l5.6-2.3L12 3z',
     lock: 'M7 11V7a5 5 0 0 1 10 0v4M5 11h14v10H5z',
     chart: 'M3 3v18h18M8 14v4M13 9v9M18 12v6',
-    expand: 'M8 3H5a2 2 0 0 0-2 2v3M21 8V5a2 2 0 0 0-2-2h-3M3 16v3a2 2 0 0 0 2 2h3M16 21h3a2 2 0 0 0 2-2v-3',
-    minimize: 'M8 3v3a2 2 0 0 1-2 2H3M21 8h-3a2 2 0 0 1-2-2V3M3 16h3a2 2 0 0 1 2 2v3M16 21v-3a2 2 0 0 1 2-2h3',
+    expand: 'M15 3h6v6M21 3l-7 7M3 21l7-7M9 21H3v-6',
+    minimize: 'M14 10l7-7M20 10h-6V4M3 21l7-7M4 14h6v6',
   };
 
   function GEIcon({ kind, size, color, sw }) {
@@ -238,6 +238,10 @@
       .ge-btn:disabled{opacity:.35;cursor:default;pointer-events:none}
       .ge-btn.solid{background:#d99e01;border-color:#d99e01;color:rgb(255, 255, 255)}
       .ge-btn.solid:hover{background:#c58502;border-color:#c58502}
+      .ge-btn.icon-only{padding:6px 10px}
+      .ge-actions.big{min-height:38px}
+      .ge-actions.big .ge-btn{padding:8px 14px;font-size:13px}
+      .ge-actions.big .ge-btn.icon-only{padding:8px 12px}
       .ge-count{display:inline-flex;align-items:baseline;gap:8px}
       .ge-count-num{font-size:28px;font-weight:800;letter-spacing:-0.03em;font-variant-numeric:tabular-nums;line-height:1}
       .ge-count-lab{font-size:11.5px;color:#9ca3af}
