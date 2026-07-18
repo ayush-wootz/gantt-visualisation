@@ -241,10 +241,12 @@ var GANTT_CONFIG = {
       setStaged({}); setPop(null); setDrag(null);
       if (had) setToast({ tone: 'warn', text: 'Changes discarded — plan unchanged.' });
     }
+    // Reopen now STAGES too (same lifecycle as complete()/commitDates): shows
+    // in Save/Cancel, only actually reopens the process once the plan is saved.
     function reopen(p) {
-      setProcs((prev) => prev.map((x) => (x.id === p.id ? Object.assign({}, x, { done: false, completedOn: null }) : x)));
+      setStaged((prev) => Object.assign({}, prev, { [p.id]: { start: p.start, end: p.end, reopened: true, prevCompletedOn: p.completedOn } }));
       setPop(null);
-      setToast({ tone: 'ok', text: p.name + ' reopened — dates are editable again.' });
+      setToast({ tone: 'ok', text: p.name + ' reopened — dates are editable again. Save the plan to apply.' });
     }
     // Marking complete now STAGES (like a date edit) so it shows in Save/Cancel
     // and commits with everything else on Save. Encoded as a staged entry with
@@ -266,6 +268,10 @@ var GANTT_CONFIG = {
         const e = stagedMap[id];
         if (e.done) {
           parts.push('Mark ' + p.name + ' as complete. Actual finish date: ' + (e.completedOn || e.end) + ' (planned was ' + p.end + ')');
+          return;
+        }
+        if (e.reopened) {
+          parts.push('Reopen ' + p.name + ' — mark it as NOT complete (it was previously marked done on ' + (e.prevCompletedOn || p.completedOn || 'an earlier date') + ').');
           return;
         }
         const bits = ['Change ' + p.name];
@@ -379,13 +385,14 @@ var GANTT_CONFIG = {
           result = GD.cascade(procs, phases, stagedMap);
         }
 
-        // Ensure any staged completions are reflected in the candidate procs
+        // Ensure any staged completions/reopens are reflected in the candidate procs
         Object.keys(stagedMap).forEach(function(id) {
           const e = stagedMap[id];
-          if (e && e.done) {
-            const q = result.procs.find(function(x) { return x.id === id; });
-            if (q) { q.done = true; q.completedOn = e.completedOn || e.end; }
-          }
+          if (!e) return;
+          const q = result.procs.find(function(x) { return x.id === id; });
+          if (!q) return;
+          if (e.done) { q.done = true; q.completedOn = e.completedOn || e.end; }
+          else if (e.reopened) { q.done = false; q.completedOn = null; }
         });
 
         setCandidate(result);
@@ -501,12 +508,12 @@ var GANTT_CONFIG = {
       return { s, e, wall };
     }
     function startDrag(ev, p) {
-      if (p.done || candidate || veil) return;
+      const st = staged[p.id] || {};
+      if ((p.done && !st.reopened) || candidate || veil) return;
       setPop(null);
       const r = ev.currentTarget.getBoundingClientRect();
       const off = ev.clientX - r.left;
       const type = off < 12 ? 'l' : off > r.width - 12 ? 'r' : 'm';
-      const st = staged[p.id] || {};
       dragRef.current = { id: p.id, p, type, x0: ev.clientX, s0: st.start || p.start, e0: st.end || p.end, moved: false };
       ev.currentTarget.setPointerCapture(ev.pointerId);
     }
@@ -559,15 +566,19 @@ var GANTT_CONFIG = {
       const candGhost = candidate ? candidate.ghosts[p.id] : null;
       const ds = isDrag ? drag.start : (st && st.start) || p.start;
       const de = isDrag ? drag.end : (st && st.end) || p.end;
-      const stt = GD.status({ done: p.done, start: ds, end: de }, D.today);
+      // A staged reopen (GEPopDone → reopen()) makes the row behave as if
+      // p.done were already false, until the plan is saved or the reopen is
+      // cleared — procs itself isn't mutated until then.
+      const effectivelyDone = p.done && !(st && st.reopened);
+      const stt = GD.status({ done: effectivelyDone, start: ds, end: de }, D.today);
       const left = pct(ds), width = wPct(ds, de);
       const rightPct = left + width;
-      const barH = p.done ? Z_BAR_DONE : Z_BAR_H;
+      const barH = effectivelyDone ? Z_BAR_DONE : Z_BAR_H;
       const barY = (row.h - barH) / 2;
       const edited = isDrag || !!st || !!candGhost;
       const ghost = (isDrag || st) ? { start: p.start, end: p.end } : candGhost;
-      const editable = !p.done && !candidate && !veil;
-      const overs = !p.done && GD.toMs(de) > GD.toMs(D.dispatch);
+      const editable = !effectivelyDone && !candidate && !veil;
+      const overs = !effectivelyDone && GD.toMs(de) > GD.toMs(D.dispatch);
       const segs = [], extras = [];
       let badgeRightPx = 8;
 
@@ -715,7 +726,7 @@ var GANTT_CONFIG = {
         let inner;
         if (candidate) {
           inner = <window.GEPopCandidate p={p} ghost={candidate.ghosts[p.id]} onClose={() => setPop(null)}></window.GEPopCandidate>;
-        } else if (p.done) {
+        } else if (p.done && !(st && st.reopened)) {
           inner = <window.GEPopDone p={p} onReopen={() => reopen(p)} onClose={() => setPop(null)}></window.GEPopDone>;
         } else {
           inner = <window.GEPopEditFull key={p.id + (st ? '-st' : '')} p={p} cur={{ start: ds, end: de }} win={w} staged={st || null}
