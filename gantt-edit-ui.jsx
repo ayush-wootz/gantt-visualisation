@@ -59,9 +59,9 @@
     if (v === p.end) return { tone: 'ok', text: 'Matches the planned finish.' };
     if (GD.toMs(v) <= GD.toMs(win.end)) {
       const early = GD.toMs(v) < GD.toMs(p.end);
-      return { tone: 'ok', text: 'Finished ' + (early ? 'earlier than planned' : 'a little later than planned') + ' (planned ' + GD.fmt(p.end) + ') — staged, applies on save.' };
+      return { tone: 'ok', text: 'Finished ' + (early ? 'earlier than planned' : 'a little later than planned') + ' (planned ' + GD.fmt(p.end) + ') — staged, applies on approve.' };
     }
-    return { tone: 'info', text: 'Finishes past the Phase ' + p.phase + ' plan — later steps reschedule when you save.' };
+    return { tone: 'info', text: 'Finishes past the Phase ' + p.phase + ' plan — later steps reschedule when you approve.' };
   }
 
   // ── popover: view mode, incomplete (LEGACY — no longer used, see GEPopEditFull)
@@ -116,7 +116,7 @@
         <div>
           <div className="ge-pop-ttl"><span>{p.name}</span><span className="ge-x" onClick={onClose}>×</span></div>
           <div className="ge-prow"><span>Completing on</span><b style={{ color: '#fde68a' }}>{GD.fmt(staged.completedOn || staged.end)}</b></div>
-          <div className="ge-note warn">Pending completion — save the plan to apply.</div>
+          <div className="ge-note warn">Pending completion — approve to apply.</div>
           <button className="ge-pbtn" onClick={onClear}>Clear completion</button>
         </div>
       );
@@ -130,7 +130,7 @@
         {err && <div className="ge-note err">End must be on or after start.</div>}
         {blocked && <div className="ge-note err">Phase {p.phase} can’t start before Phase {p.phase - 1} finishes ({GD.fmt(minStart)}). Move a Phase {p.phase - 1} process earlier first.</div>}
         {!err && !blocked && (out
-          ? <div className="ge-note warn">Later steps will shift to fit this — applied when you save the plan.</div>
+          ? <div className="ge-note warn">Later steps will shift to fit this — applied when you approve.</div>
           : <div className="ge-note ok">Other steps stay unchanged.</div>)}
         {!compOpen ? (
           <div className="ge-pbtn-row">

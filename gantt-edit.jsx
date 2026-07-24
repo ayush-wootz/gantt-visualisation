@@ -5,9 +5,10 @@
 //   Drag a bar  → move; drag its edges → resize; click → popover for exact
 //                 dates or to mark complete.
 //   Any pending change (a dragged/typed date OR a mark-complete) stages and
-//   shows the "Cancel / Save plan (n)" bar. Save hits /schedule and builds a
-//   candidate; staged edits that stretch a phase window cascade downstream.
-//   CANDIDATE — ghost bars show the old dates; approve to go live or discard.
+//   shows the "Cancel / Approve plan" bar. Approve hits /schedule (recompute
+//   downstream) then /approve back-to-back — no separate review step — and the
+//   updated plan goes live in one click. A candidate loaded from data (an
+//   existing draft) still shows ghost bars + Discard / Approve for review.
 
 // ── CONFIG — set your endpoints here ──────────────────────────────────────
 var GANTT_CONFIG = {
@@ -231,7 +232,7 @@ var GANTT_CONFIG = {
       }
       setStaged((prev) => Object.assign({}, prev, { [p.id]: { start: s, end: e } }));
       const ext = outOf(p, s, e);
-      setToast({ tone: ext ? 'info' : 'ok', text: p.name + ' \u2192 ' + GD.fmtRange(s, e) + (ext ? ' \u00b7 extends Phase ' + p.phase + ', later steps shift when you save.' : ' \u00b7 save the plan to apply.') });
+      setToast({ tone: ext ? 'info' : 'ok', text: p.name + ' \u2192 ' + GD.fmtRange(s, e) + (ext ? ' \u00b7 extends Phase ' + p.phase + ', later steps shift when you approve.' : ' \u00b7 approve to apply.') });
     }
     function clearStaged(id) {
       setStaged((prev) => { const n = Object.assign({}, prev); delete n[id]; return n; });
@@ -246,17 +247,17 @@ var GANTT_CONFIG = {
     function reopen(p) {
       setStaged((prev) => Object.assign({}, prev, { [p.id]: { start: p.start, end: p.end, reopened: true, prevCompletedOn: p.completedOn } }));
       setPop(null);
-      setToast({ tone: 'ok', text: p.name + ' reopened — dates are editable again. Save the plan to apply.' });
+      setToast({ tone: 'ok', text: p.name + ' reopened — dates are editable again. Approve to apply.' });
     }
     // Marking complete now STAGES (like a date edit) so it shows in Save/Cancel
     // and commits with everything else on Save. Encoded as a staged entry with
-    // a `done` flag; buildContext/runRegen turn it into a completion for the AI.
+    // a `done` flag; buildContext/saveAndApprove turn it into a completion for the AI.
     function complete(p, v) {
       const w = winOf(p.phase);
       const beyond = GD.toMs(v) > GD.toMs(w.end);
       setStaged((prev) => Object.assign({}, prev, { [p.id]: { start: p.start, end: v, done: true, completedOn: v } }));
       setPop(null);
-      setToast({ tone: beyond ? 'info' : 'ok', text: '\u2713 ' + p.name + ' set to complete (' + GD.fmt(v) + ')' + (beyond ? ' \u00b7 later steps shift when you save.' : ' \u00b7 save the plan to apply.') });
+      setToast({ tone: beyond ? 'info' : 'ok', text: '\u2713 ' + p.name + ' set to complete (' + GD.fmt(v) + ')' + (beyond ? ' \u00b7 later steps shift when you approve.' : ' \u00b7 approve to apply.') });
     }
 
     // ── BUILD CONTEXT STRING for /schedule ─────────────────────────────────
@@ -283,15 +284,18 @@ var GANTT_CONFIG = {
       return parts.join('. ');
     }
 
-    // ── runRegen: hits /schedule, returns candidate ───────────────────────
-    function runRegen(stagedMap) {
+    // ── saveAndApprove: hits /schedule (recompute downstream) then /approve
+    // back-to-back, then promotes the result straight to live — the edit path
+    // no longer stops at a candidate review step. /approve needs the
+    // draft_row_id that /schedule mints, hence the chain. ──────────────────
+    function saveAndApprove(stagedMap) {
+      if (veil) return; // already saving/approving — ignore repeat clicks
       setPop(null); setDrag(null);
 
       const msgs = [
         'Saving changes\u2026',
         'Updating the schedule\u2026',
         'Rescheduling later steps\u2026',
-        'Preparing the updated plan\u2026',
       ];
       let i = 0;
       setVeil(msgs[0]);
@@ -340,7 +344,12 @@ var GANTT_CONFIG = {
       .then(function(data) {
         clearInterval(iv);
 
-        // Update draft_row_id for subsequent approve call
+        // /approve targets the draft via meta.draft_row_id, which Glide bakes
+        // into the page-load payload from the current_draft relation. Keep the
+        // original passthrough: if the response ever surfaces one, use it; else
+        // the loaded relation id stands. (If a first-ever edit ever fails to
+        // approve in Glide because no draft existed at load, that's the spot to
+        // resolve the draft by assembly+owner — mirroring /discard — server-side.)
         if (data.draft_row_id && D.meta) D.meta.draft_row_id = data.draft_row_id;
 
         // Parse updated processes from response gantt_json
@@ -367,44 +376,59 @@ var GANTT_CONFIG = {
           });
         }
 
-        // If backend returns updated processes, use them; else fall back to local cascade
-        let result;
-        if (newProcs && newProcs.length) {
-          const ghosts = {};
-          procs.forEach(function(p) {
-            const q = newProcs.find(function(x) { return x.id === p.id; });
-            if (q && (q.start !== p.start || q.end !== p.end)) ghosts[p.id] = { start: p.start, end: p.end };
-          });
-          const editedIds = Object.keys(stagedMap);
-          const shiftedIds = newProcs
-            .filter(function(q) { return ghosts[q.id] && editedIds.indexOf(q.id) < 0; })
-            .map(function(q) { return q.id; });
-          result = { procs: newProcs, editedIds, shiftedIds, shiftDays: 0, ghosts };
-        } else {
-          // Fallback: local cascade simulation
-          result = GD.cascade(procs, phases, stagedMap);
-        }
+        // Use backend-updated processes when present; else fall back to a local
+        // cascade so the live plan still reflects the edit if the API omits them.
+        const resultProcs = (newProcs && newProcs.length) ? newProcs : GD.cascade(procs, phases, stagedMap).procs;
 
-        // Ensure any staged completions/reopens are reflected in the candidate procs
+        // Ensure any staged completions/reopens are reflected in the final procs
         Object.keys(stagedMap).forEach(function(id) {
           const e = stagedMap[id];
           if (!e) return;
-          const q = result.procs.find(function(x) { return x.id === id; });
+          const q = resultProcs.find(function(x) { return x.id === id; });
           if (!q) return;
           if (e.done) { q.done = true; q.completedOn = e.completedOn || e.end; }
           else if (e.reopened) { q.done = false; q.completedOn = null; }
         });
 
-        setCandidate(result);
+        // Straight to approve — no candidate review stop.
+        setVeil('Approving the plan…');
+        const m2 = D.meta || {};
+        return fetch(GANTT_CONFIG.APPROVE_URL, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-schedule-secret': GANTT_CONFIG.SCHEDULE_SECRET,
+          },
+          body: JSON.stringify({
+            assembly_row_id: m2.assembly_row_id || '',
+            assembly_number: m2.assembly_number || '',
+            project_number:  m2.project_number  || '',
+            draft_row_id:    m2.draft_row_id     || '',
+            generated_by:    m2.generated_by     || '',
+          }),
+        })
+        .then(function(res) {
+          if (!res.ok) return res.text().then(function(t) { throw new Error('HTTP ' + res.status + ': ' + t); });
+          return res.json();
+        })
+        .then(function() { return resultProcs; });
+      })
+      .then(function(resultProcs) {
+        // Promote straight to live.
+        const np = resultProcs.map(function(p) { return Object.assign({}, p); });
+        setProcs(np);
+        setPhases(GD.derivePhases(np));
+        setCandidate(null);
         setStaged({});
+        setPop(null);
         setVeil(null);
-        setToast({ tone: 'info', text: 'Plan updated — review what changed, then approve.' });
+        setToast({ tone: 'ok', text: '✓ Plan approved — changes are now live.' });
       })
       .catch(function(err) {
         clearInterval(iv);
         setVeil(null);
-        setToast({ tone: 'err', text: 'Save failed: ' + err.message + ' — edits preserved, try again.' });
-        console.error('runRegen error:', err);
+        setToast({ tone: 'err', text: 'Approve failed: ' + err.message + ' — edits preserved, try again.' });
+        console.error('saveAndApprove error:', err);
       });
     }
 
@@ -513,7 +537,12 @@ var GANTT_CONFIG = {
       setPop(null);
       const r = ev.currentTarget.getBoundingClientRect();
       const off = ev.clientX - r.left;
-      const type = off < 12 ? 'l' : off > r.width - 12 ? 'r' : 'm';
+      // Edge zones scale with bar width (capped at 12px) so a narrow ~1-day bar
+      // still keeps a real center "move" zone — a fixed 12px edge on both sides
+      // used to swallow a short bar entirely, forcing every grab into a resize
+      // and making such bars effectively un-draggable.
+      const edge = Math.max(3, Math.min(12, r.width * 0.25));
+      const type = off < edge ? 'l' : off > r.width - edge ? 'r' : 'm';
       dragRef.current = { id: p.id, p, type, x0: ev.clientX, s0: st.start || p.start, e0: st.end || p.end, moved: false };
       ev.currentTarget.setPointerCapture(ev.pointerId);
     }
@@ -671,7 +700,7 @@ var GANTT_CONFIG = {
           onPointerUp={editable ? endDrag : undefined}
           onPointerCancel={editable ? endDrag : undefined}
           onClick={(e) => barClick(e, p)}
-          title={p.name + ' · ' + GD.fmtRange(ds, de)}>
+          title={GD.fmtRange(ds, de) + ' · ' + GD.durDays(ds, de) + 'd'}>
           {editable && <div className="ge-frame" style={{ top: 7, height: barH }}></div>}
           {editable && <div className="ge-handle l"></div>}
           {editable && <div className="ge-handle r"></div>}
@@ -784,8 +813,8 @@ var GANTT_CONFIG = {
             ) : stagedN > 0 ? (
               <React.Fragment>
                 <button className="ge-btn" onClick={cancelChanges}>Cancel</button>
-                <button className="ge-btn solid" onClick={() => runRegen(staged)}>
-                  <window.GEIcon kind="check" size={full ? 13 : 12} sw={2.5}></window.GEIcon> Save plan ({stagedN})
+                <button className="ge-btn solid" onClick={() => saveAndApprove(staged)}>
+                  <window.GEIcon kind="check" size={full ? 13 : 12} sw={2.5}></window.GEIcon> Approve plan
                 </button>
               </React.Fragment>
             ) : null}
