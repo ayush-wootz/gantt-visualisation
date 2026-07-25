@@ -56,7 +56,11 @@ var GANTT_CONFIG = {
     const cardRef = useRef(null);
     const rootRef = useRef(null);
     const dragRef = useRef(null);
-    const clickGuard = useRef(false);
+    // Timestamp (ms) of the last move-drag end, used to swallow ONLY the
+    // synthetic click that immediately follows it. A timestamp (vs a sticky
+    // boolean) self-expires, so a drag whose click landed elsewhere can't leave
+    // the guard stuck and eat a later, unrelated click on another process.
+    const clickGuard = useRef(0);
     const timersRef = useRef([]);
     const didAutoScroll = useRef(false);
 
@@ -102,7 +106,13 @@ var GANTT_CONFIG = {
     }
 
     // ── derived plan + time scale ─────────────────────────────────────────
-    const shown = candidate ? candidate.procs : procs;
+    // Live, client-side-only cascade preview: while staging (no candidate
+    // loaded), an edit that pushes a phase's live work past its window
+    // immediately shows every downstream, non-completed process shifted
+    // forward too — same rule the backend enforces at approve time, just
+    // visible right away instead of only after the fact.
+    const liveCascaded = useMemo(() => GD.liveCascade(procs, staged), [procs, staged]);
+    const shown = candidate ? candidate.procs : liveCascaded.procs;
     const sorted = useMemo(
       () => [...shown].sort((a, b) => a.phase - b.phase || GD.toMs(a.start) - GD.toMs(b.start)),
       [shown]
@@ -225,14 +235,34 @@ var GANTT_CONFIG = {
     const dtd = GD.daysBetween(D.today, D.dispatch);
 
     // ── actions ───────────────────────────────────────────────────────────
+    // Merges into any existing staged entry rather than replacing it, so a
+    // reopen's `reopened`/`prevCompletedOn` flags survive every subsequent
+    // drag/apply on that process \u2014 without this, the first date edit after a
+    // reopen wiped those flags and the row silently re-locked as "done".
     function commitDates(p, s, e) {
-      if (s === p.start && e === p.end) {
+      // Compare against the SAVED plan (procs), NOT p's current on-screen dates.
+      // p is the displayed proc, which for an edited/cascaded bar sits at its
+      // pending position \u2014 so `s === p.start` meant "matches where it is now",
+      // and dropping the staged entry then snapped the bar back to its ORIGINAL
+      // saved date. For any process whose baseline is later than where the user
+      // moved it (every process after the first in a phase), that revert was a
+      // forward "bounce". Only a return to the true baseline clears the edit.
+      const base = procs.find(function (x) { return x.id === p.id; }) || p;
+      const existing = staged[p.id];
+      const wasReopened = !!(existing && existing.reopened);
+      // For a reopened process, matching the baseline doesn't mean "nothing
+      // pending" \u2014 the reopen itself is still an unapproved change.
+      if (!wasReopened && s === base.start && e === base.end) {
         setStaged((prev) => { const n = Object.assign({}, prev); delete n[p.id]; return n; });
         return;
       }
-      setStaged((prev) => Object.assign({}, prev, { [p.id]: { start: s, end: e } }));
+      setStaged((prev) => {
+        const entry = { start: s, end: e };
+        if (wasReopened) { entry.reopened = true; entry.prevCompletedOn = existing.prevCompletedOn; }
+        return Object.assign({}, prev, { [p.id]: entry });
+      });
       const ext = outOf(p, s, e);
-      setToast({ tone: ext ? 'info' : 'ok', text: p.name + ' \u2192 ' + GD.fmtRange(s, e) + (ext ? ' \u00b7 extends Phase ' + p.phase + ', later steps shift when you approve.' : ' \u00b7 approve to apply.') });
+      setToast({ tone: ext ? 'info' : 'ok', text: p.name + ' \u2192 ' + GD.fmtRange(s, e) + (ext ? ' \u00b7 extends Phase ' + p.phase + ' \u2014 later steps shifted to fit; approve to apply.' : ' \u00b7 approve to apply.') });
     }
     function clearStaged(id) {
       setStaged((prev) => { const n = Object.assign({}, prev); delete n[id]; return n; });
@@ -242,8 +272,10 @@ var GANTT_CONFIG = {
       setStaged({}); setPop(null); setDrag(null);
       if (had) setToast({ tone: 'warn', text: 'Changes discarded — plan unchanged.' });
     }
-    // Reopen now STAGES too (same lifecycle as complete()/commitDates): shows
-    // in Save/Cancel, only actually reopens the process once the plan is saved.
+    // Reopen STAGES the process (same lifecycle as complete()/commitDates) —
+    // it only actually reopens once the plan is approved. The `reopened` flag
+    // set here now survives any number of later drags/edits (see commitDates),
+    // so the user reopens once and can keep adjusting freely after that.
     function reopen(p) {
       setStaged((prev) => Object.assign({}, prev, { [p.id]: { start: p.start, end: p.end, reopened: true, prevCompletedOn: p.completedOn } }));
       setPop(null);
@@ -257,6 +289,11 @@ var GANTT_CONFIG = {
       const beyond = GD.toMs(v) > GD.toMs(w.end);
       setStaged((prev) => Object.assign({}, prev, { [p.id]: { start: p.start, end: v, done: true, completedOn: v } }));
       setPop(null);
+      // Unlike commitDates, "shifted to fit" isn't guaranteed true here: a
+      // completed process only feeds the phase's handover once every other
+      // process in that phase is also done (liveCascade mirrors the backend's
+      // rule) \u2014 with live siblings still open, this won't visibly shift
+      // anything until they're resolved too, so the wording stays "will".
       setToast({ tone: beyond ? 'info' : 'ok', text: '\u2713 ' + p.name + ' set to complete (' + GD.fmt(v) + ')' + (beyond ? ' \u00b7 later steps shift when you approve.' : ' \u00b7 approve to apply.') });
     }
 
@@ -272,7 +309,15 @@ var GANTT_CONFIG = {
           return;
         }
         if (e.reopened) {
-          parts.push('Reopen ' + p.name + ' — mark it as NOT complete (it was previously marked done on ' + (e.prevCompletedOn || p.completedOn || 'an earlier date') + ').');
+          // A reopen can now carry a later date edit too (commitDates merges
+          // into it instead of replacing it) — say so, or the AI only hears
+          // about the reopen and recomputes from the old (still-completed) dates.
+          let msg = 'Reopen ' + p.name + ' — mark it as NOT complete (it was previously marked done on ' + (e.prevCompletedOn || p.completedOn || 'an earlier date') + ')';
+          const bits = [];
+          if (e.start && e.start !== p.start) bits.push('start to ' + e.start);
+          if (e.end   && e.end   !== p.end)   bits.push('end to '   + e.end);
+          if (bits.length) msg += ', then change ' + bits.join(' and ');
+          parts.push(msg + '.');
           return;
         }
         const bits = ['Change ' + p.name];
@@ -506,13 +551,14 @@ var GANTT_CONFIG = {
     }
 
     // ── drag ──────────────────────────────────────────────────────────────
+    // The wall a process can't cross is the previous phase's handover — and it
+    // MUST be the same handover liveCascade uses (GD.handoverEnd: live-only,
+    // completed-fallback), or a late-completed process in the previous phase
+    // sets a wall the cascade ignores, freezing/blocking downstream bars.
+    // `shown` already carries each process's live-cascaded dates + effective
+    // done state, so handoverEnd reads exactly what's on screen.
     function prevPhaseEnd(phaseNum) {
-      const inPhase = shown.filter((x) => x.phase === phaseNum);
-      if (!inPhase.length) return null;
-      return inPhase.reduce((mx, x) => {
-        const e = (!candidate && staged[x.id] && staged[x.id].end) || x.end;
-        return GD.toMs(e) > GD.toMs(mx) ? e : mx;
-      }, inPhase[0].end);
+      return GD.handoverEnd(shown.filter((x) => x.phase === phaseNum));
     }
     function calcDrag(d, clientX) {
       const dd = Math.round((clientX - d.x0) / dayPx);
@@ -524,16 +570,30 @@ var GANTT_CONFIG = {
       let wall = null;
       if (d.p.phase > 1) {
         wall = prevPhaseEnd(d.p.phase - 1);
-        if (wall && GD.toMs(s) < GD.toMs(wall)) {
-          s = wall;
-          if (d.type === 'm') e = GD.addDays(s, dur);
+        if (wall) {
+          // Floor at the wall — but never shove a bar FORWARD past where it
+          // already sits. A bar that already started before the wall (a
+          // tolerated baseline overlap) stays put instead of snapping to the
+          // wall the instant you grab it; a compliant bar still can't cross it.
+          // Mirrors the popover's "only block if you moved the start earlier".
+          const floor = GD.toMs(wall) <= GD.toMs(d.s0) ? wall : d.s0;
+          if (GD.toMs(s) < GD.toMs(floor)) {
+            s = floor;
+            if (d.type === 'm') e = GD.addDays(s, dur);
+          }
         }
       }
       return { s, e, wall };
     }
     function startDrag(ev, p) {
+      // Every fresh gesture clears any stale click-guard up front, so a guard
+      // left over from a drag whose click never landed can't suppress this
+      // interaction's own click.
+      clickGuard.current = 0;
       const st = staged[p.id] || {};
-      if ((p.done && !st.reopened) || candidate || veil) return;
+      // A staged "pending complete" (st.done) locks the bar the same way an
+      // already-approved completion does — Clear completion is the way back.
+      if ((p.done && !st.reopened) || st.done || candidate || veil) return;
       setPop(null);
       const r = ev.currentTarget.getBoundingClientRect();
       const off = ev.clientX - r.left;
@@ -543,12 +603,20 @@ var GANTT_CONFIG = {
       // and making such bars effectively un-draggable.
       const edge = Math.max(3, Math.min(12, r.width * 0.25));
       const type = off < edge ? 'l' : off > r.width - edge ? 'r' : 'm';
-      dragRef.current = { id: p.id, p, type, x0: ev.clientX, s0: st.start || p.start, e0: st.end || p.end, moved: false };
+      // s0/e0 are the row's current on-screen (cascaded) dates — same p.start/
+      // p.end the bar renders at — so the drag starts exactly under the cursor.
+      dragRef.current = { id: p.id, p, type, x0: ev.clientX, s0: p.start, e0: p.end, moved: false };
       ev.currentTarget.setPointerCapture(ev.pointerId);
     }
     function moveDrag(ev) {
       const d = dragRef.current;
       if (!d) return;
+      // Stale-drag guard: onPointerMove fires on plain hover too. If a pointerup
+      // was ever missed (pointer capture lost when React re-rendered the bar
+      // mid-drag, release outside the frame, …), dragRef would linger and the
+      // bar would "follow the cursor" untouched — the phantom-move / repulsion.
+      // No button held (buttons === 0) means this is a hover: drop the ref, bail.
+      if (ev.buttons === 0) { dragRef.current = null; setDrag(null); return; }
       if (Math.abs(ev.clientX - d.x0) > 4) d.moved = true;
       if (!d.moved) return;
       const r = calcDrag(d, ev.clientX);
@@ -559,14 +627,17 @@ var GANTT_CONFIG = {
       dragRef.current = null;
       if (!d) return;
       if (!d.moved) { setDrag(null); return; }
-      clickGuard.current = true;
+      clickGuard.current = Date.now();
       const r = calcDrag(d, ev.clientX);
       setDrag(null);
       if (r.s !== d.p.start || r.e !== d.p.end || staged[d.id]) commitDates(d.p, r.s, r.e);
     }
     function barClick(ev, p) {
       ev.stopPropagation();
-      if (clickGuard.current) { clickGuard.current = false; return; }
+      // Swallow only the click that fires right after a move-drag (same gesture,
+      // within a short window). A stale guard self-expires, so it never eats a
+      // genuine, later click on this or any other process.
+      if (clickGuard.current && Date.now() - clickGuard.current < 350) { clickGuard.current = 0; return; }
       if (veil) return;
       setPop((prev) => (prev && prev.id === p.id ? null : { id: p.id }));
     }
@@ -593,8 +664,15 @@ var GANTT_CONFIG = {
       const st = staged[p.id];
       const isDrag = drag && drag.id === p.id;
       const candGhost = candidate ? candidate.ghosts[p.id] : null;
-      const ds = isDrag ? drag.start : (st && st.start) || p.start;
-      const de = isDrag ? drag.end : (st && st.end) || p.end;
+      // p.start/p.end come from the live-cascaded array, so they ALREADY carry
+      // this row's staged edit PLUS any realignment shift — that's the current
+      // on-screen position. Use it for edited and non-edited rows alike; using
+      // the raw staged date for edited rows froze them in place while their
+      // non-edited siblings shifted, tearing a phase apart on a big realign.
+      // liveCascaded.ghosts holds the true "before" (last saved) position.
+      const liveGhost = !candidate ? liveCascaded.ghosts[p.id] : null;
+      const ds = isDrag ? drag.start : p.start;
+      const de = isDrag ? drag.end : p.end;
       // A staged reopen (GEPopDone → reopen()) makes the row behave as if
       // p.done were already false, until the plan is saved or the reopen is
       // cleared — procs itself isn't mutated until then.
@@ -604,9 +682,15 @@ var GANTT_CONFIG = {
       const rightPct = left + width;
       const barH = effectivelyDone ? Z_BAR_DONE : Z_BAR_H;
       const barY = (row.h - barH) / 2;
-      const edited = isDrag || !!st || !!candGhost;
-      const ghost = (isDrag || st) ? { start: p.start, end: p.end } : candGhost;
-      const editable = !effectivelyDone && !candidate && !veil;
+      const edited = isDrag || !!st || !!candGhost || !!liveGhost;
+      // During an active drag, the ghost is simply wherever this row was the
+      // instant before this gesture (p.start/p.end, i.e. shown's position) —
+      // for anything already committed, it's the true "before" from ghosts.
+      const ghost = isDrag ? { start: p.start, end: p.end } : (candGhost || liveGhost || null);
+      // A staged mark-complete (st.done) locks the bar immediately, same as an
+      // already-completed one — prevents a stray drag from silently discarding
+      // the pending completion (commitDates would otherwise overwrite it).
+      const editable = !effectivelyDone && !(st && st.done) && !candidate && !veil;
       const overs = !effectivelyDone && GD.toMs(de) > GD.toMs(D.dispatch);
       const segs = [], extras = [];
       let badgeRightPx = 8;
@@ -625,6 +709,13 @@ var GANTT_CONFIG = {
         if (candGhost) {
           const isShift = candidate.shiftedIds.indexOf(p.id) >= 0;
           extras.push(<span key="cb" className="ge-tag" style={{ left: 'calc(' + rightPct + '% + 6px)', top: row.h / 2 }}>{isShift ? '+' + candidate.shiftDays + 'd' : 'CHANGED'}</span>);
+          badgeRightPx = 56;
+        } else if (liveGhost && !st && !isDrag) {
+          // Not a direct edit — this row realigned because an earlier edit moved
+          // a prior phase, and the cascade keeps the gap while avoiding overlap.
+          // Shift can be either direction: +Nd later, −Nd earlier.
+          const sd = liveCascaded.shiftDaysById[p.id] || 0;
+          extras.push(<span key="lg" className="ge-tag" style={{ left: 'calc(' + rightPct + '% + 6px)', top: row.h / 2 }}>{(sd >= 0 ? '+' : '−') + Math.abs(sd) + 'd'}</span>);
           badgeRightPx = 56;
         }
         // pending completion marker (staged mark-complete)
@@ -743,7 +834,9 @@ var GANTT_CONFIG = {
       if (row) {
         const p = row.p;
         const st = staged[p.id];
-        const ds = (st && st.start) || p.start, de = (st && st.end) || p.end;
+        // Current on-screen (cascaded) dates — matches the bar, so the popover
+        // anchors to it and its date inputs open on where the row actually is.
+        const ds = p.start, de = p.end;
         const w = winOf(p.phase);
         const popW = 252;
         let lpx = (pct(ds) / 100) * layerW;

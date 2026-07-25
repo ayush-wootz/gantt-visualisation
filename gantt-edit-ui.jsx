@@ -108,7 +108,10 @@
     const isPendingDone = staged && staged.done;
     const noChange = s === cur.start && e2 === cur.end;
     const applyActive = !err && !blocked && !noChange;
-    const completedDisabled = applyActive || !!staged;
+    // Only the form's own unsaved edit blocks marking complete now — an
+    // already-applied staged date change (e.g. from an earlier drag) no
+    // longer has to be cleared first before you can mark the process done.
+    const completedDisabled = applyActive;
 
     // A bar with a staged completion shows the pending state + a way to clear it.
     if (isPendingDone) {

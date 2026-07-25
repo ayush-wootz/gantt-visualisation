@@ -37,19 +37,25 @@ window.GanttEditData = (function () {
   // ── demo plan (deterministic: today is pinned) ──────────────────────────
   const TODAY_DEFAULT = '2026-06-22';
   const DISPATCH_DEFAULT = '2026-08-15';
+  // Phase-rule compliant: each phase's live (non-completed) start is on or
+  // after the previous phase's handover (max end of its live processes, or of
+  // its completed ones if none are live). Completed processes (p1-p3) are
+  // exempt from this and may legitimately overlap earlier phases (real-world
+  // parallel work) — only p4 onward had to be checked/shifted. Durations and
+  // relative offsets within each phase are unchanged from the original data.
   const DEMO = [
     { id: 'p1',  name: 'Design review',            phase: 1, phaseLabel: 'PHASE 1', start: '2026-05-15', end: '2026-05-22', done: true,  completedOn: '2026-05-22' },
     { id: 'p2',  name: 'BOM finalization',         phase: 1, phaseLabel: 'PHASE 1', start: '2026-05-20', end: '2026-06-01', done: true,  completedOn: '2026-06-01' },
     { id: 'p3',  name: 'Raw material procurement', phase: 2, phaseLabel: 'PHASE 2', start: '2026-05-25', end: '2026-06-18', done: true,  completedOn: '2026-06-18' },
     { id: 'p4',  name: 'Vendor confirm',           phase: 2, phaseLabel: 'PHASE 2', start: '2026-06-01', end: '2026-06-20', done: false, completedOn: null },
-    { id: 'p5',  name: 'CNC machining',            phase: 3, phaseLabel: 'PHASE 3', start: '2026-06-12', end: '2026-07-05', done: false, completedOn: null },
-    { id: 'p6',  name: 'Sheet metal fab',          phase: 3, phaseLabel: 'PHASE 3', start: '2026-06-18', end: '2026-07-08', done: false, completedOn: null },
-    { id: 'p7',  name: 'Welding',                  phase: 3, phaseLabel: 'PHASE 3', start: '2026-06-28', end: '2026-07-10', done: false, completedOn: null },
-    { id: 'p8',  name: 'Surface treatment',        phase: 4, phaseLabel: 'PHASE 4', start: '2026-07-05', end: '2026-07-18', done: false, completedOn: null },
-    { id: 'p9',  name: 'Sub-assembly',             phase: 5, phaseLabel: 'PHASE 5', start: '2026-07-15', end: '2026-07-28', done: false, completedOn: null },
-    { id: 'p10', name: 'Final assembly',           phase: 5, phaseLabel: 'PHASE 5', start: '2026-07-28', end: '2026-08-09', done: false, completedOn: null },
-    { id: 'p11', name: 'QC & testing',             phase: 6, phaseLabel: 'PHASE 6', start: '2026-08-06', end: '2026-08-15', done: false, completedOn: null },
-    { id: 'p12', name: 'Packing & dispatch',       phase: 6, phaseLabel: 'PHASE 6', start: '2026-08-14', end: '2026-08-18', done: false, completedOn: null },
+    { id: 'p5',  name: 'CNC machining',            phase: 3, phaseLabel: 'PHASE 3', start: '2026-06-20', end: '2026-07-13', done: false, completedOn: null },
+    { id: 'p6',  name: 'Sheet metal fab',          phase: 3, phaseLabel: 'PHASE 3', start: '2026-06-26', end: '2026-07-16', done: false, completedOn: null },
+    { id: 'p7',  name: 'Welding',                  phase: 3, phaseLabel: 'PHASE 3', start: '2026-07-06', end: '2026-07-18', done: false, completedOn: null },
+    { id: 'p8',  name: 'Surface treatment',        phase: 4, phaseLabel: 'PHASE 4', start: '2026-07-18', end: '2026-07-31', done: false, completedOn: null },
+    { id: 'p9',  name: 'Sub-assembly',             phase: 5, phaseLabel: 'PHASE 5', start: '2026-07-31', end: '2026-08-13', done: false, completedOn: null },
+    { id: 'p10', name: 'Final assembly',           phase: 5, phaseLabel: 'PHASE 5', start: '2026-08-13', end: '2026-08-25', done: false, completedOn: null },
+    { id: 'p11', name: 'QC & testing',             phase: 6, phaseLabel: 'PHASE 6', start: '2026-08-25', end: '2026-09-03', done: false, completedOn: null },
+    { id: 'p12', name: 'Packing & dispatch',       phase: 6, phaseLabel: 'PHASE 6', start: '2026-09-02', end: '2026-09-06', done: false, completedOn: null },
   ];
 
   // ── date helpers ────────────────────────────────────────────────────────
@@ -71,6 +77,26 @@ window.GanttEditData = (function () {
   function daysBetween(a, b) { return Math.round((toMs(b) - toMs(a)) / MS_DAY); }
   function durDays(a, b) { return daysBetween(a, b) + 1; }
   function addDays(iso, n) { return isoFromMs(toMs(iso) + n * MS_DAY); }
+
+  // \u2500\u2500 phase handover \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+  // The single source of truth for "when does this phase hand off to the next"
+  // \u2014 the max END of its LIVE (non-completed) processes, falling back to the
+  // completed ones only if the whole phase is already done. Completed processes
+  // carry fixed historical dates that may legitimately overlap earlier phases
+  // (real-world parallel work), so they must NOT gate the next phase.
+  //
+  // BOTH the forward cascade (liveCascade) AND the drag/popover wall
+  // (prevPhaseEnd in gantt-edit.jsx) go through this one function, so the bar
+  // you can drag to and the bar the cascade shifts to can never disagree \u2014 the
+  // earlier split (wall used max-of-ALL, cascade used max-of-LIVE) is what made
+  // a late-completed process set a wall the cascade itself ignored, freezing /
+  // wrongly blocking downstream phases.
+  function handoverEnd(list) {
+    if (!list || !list.length) return null;
+    const live = list.filter(function (p) { return !p.done; });
+    const pool = live.length ? live : list;
+    return pool.reduce(function (mx, p) { return toMs(p.end) > toMs(mx) ? p.end : mx; }, pool[0].end);
+  }
 
   // ── status ──────────────────────────────────────────────────────────────
   function status(p, today) {
@@ -220,6 +246,108 @@ window.GanttEditData = (function () {
     };
   }
 
+  // ── LIVE cascade preview — gap-preserving chain, both directions ──────────
+  // Walks phases in order and re-flows the plan so no two phases overlap, while
+  // preserving the ORIGINAL gap each phase had to the one before it. A phase
+  // the user directly edited is "pinned" — it keeps the dates they set (only
+  // nudged forward if a later upstream edit would otherwise overlap it). Every
+  // other (untouched) phase rigidly tracks the previous phase's handover at its
+  // original gap, so it moves FORWARD when upstream grows and BACKWARD when
+  // upstream shrinks — the chart realigns to any change without waiting for
+  // each downstream process to be touched. Completed processes never move
+  // (fixed historical dates); a phase's handover is its live work's end
+  // (handoverEnd), so a late completion never drags the next phase.
+  //
+  // Gaps come from the BASELINE (last saved `procs`), so with zero edits every
+  // delta is 0 and nothing moves — an untouched plan is never "auto-fixed".
+  // Preview only: saveAndApprove still submits the raw procs + staged map, and
+  // the authoritative recompute happens server-side at approve time.
+  function liveCascade(procs, staged) {
+    const eff = procs.map(function (p) {
+      const st = staged[p.id];
+      if (!st) return Object.assign({}, p);
+      const start = st.start || p.start;
+      const end = st.end || p.end;
+      let done = p.done, completedOn = p.completedOn;
+      if (st.reopened) { done = false; completedOn = null; }
+      else if (st.done) { done = true; completedOn = st.completedOn || end; }
+      return Object.assign({}, p, { start: start, end: end, done: done, completedOn: completedOn });
+    });
+
+    function liveStartOf(list) {
+      const live = list.filter(function (p) { return !p.done; });
+      if (!live.length) return null;
+      return live.reduce(function (m, p) { return toMs(p.start) < toMs(m) ? p.start : m; }, live[0].start);
+    }
+
+    const effByPhase = {}, baseByPhase = {};
+    eff.forEach(function (p) { (effByPhase[p.phase] || (effByPhase[p.phase] = [])).push(p); });
+    procs.forEach(function (p) { (baseByPhase[p.phase] || (baseByPhase[p.phase] = [])).push(p); });
+    const phaseNums = Object.keys(effByPhase).map(Number).sort(function (a, b) { return a - b; });
+
+    const shiftedIds = [], shiftDaysById = {};
+    let prevHandover = null;      // running handover of the realigned chain (eff)
+    let prevBaseHandover = null;  // previous phase's baseline handover (for the gap)
+
+    phaseNums.forEach(function (num) {
+      const list = effByPhase[num];
+      if (!list.length) return;
+      const baseList = baseByPhase[num] || [];
+      const live = list.filter(function (p) { return !p.done; });
+      const pinned = list.some(function (p) { return !!staged[p.id]; });
+
+      const curLiveStart = liveStartOf(list);
+      const baseLiveStart = liveStartOf(baseList);
+
+      let delta = 0;
+      if (curLiveStart != null && prevHandover != null) {
+        // Original gap of this phase to the previous handover; negative if the
+        // baseline itself let this phase start before it (a tolerated overlap).
+        const gap0 = (baseLiveStart != null && prevBaseHandover != null)
+          ? daysBetween(prevBaseHandover, baseLiveStart) : 0;
+        let target;
+        if (pinned) {
+          // User controls this phase: hold their dates, only push forward if a
+          // (later-staged) upstream change would otherwise make it overlap. The
+          // floor tolerates a baseline sub-wall overlap (min(0, gap0)) so simply
+          // grabbing a bar that always started early doesn't shove the whole
+          // phase forward on release; a compliant phase floors at the wall.
+          const floor = addDays(prevHandover, Math.min(0, gap0));
+          target = toMs(curLiveStart) < toMs(floor) ? floor : curLiveStart;
+        } else {
+          // Untouched phase: sit at the previous handover + its original gap —
+          // moves either direction as the previous handover moves.
+          target = addDays(prevHandover, gap0);
+        }
+        delta = daysBetween(curLiveStart, target);
+      }
+
+      if (delta !== 0) {
+        live.forEach(function (p) {
+          if (!staged[p.id]) { shiftedIds.push(p.id); shiftDaysById[p.id] = delta; }
+          p.start = addDays(p.start, delta);
+          p.end = addDays(p.end, delta);
+        });
+      }
+
+      const handover = handoverEnd(list);
+      const baseHandover = handoverEnd(baseList);
+      if (handover != null) prevHandover = handover;
+      if (baseHandover != null) prevBaseHandover = baseHandover;
+    });
+
+    // Ghosts cover ANY process whose effective position moved from the last
+    // saved plan — directly staged, auto-shifted by the cascade above, or
+    // both — same "before" comparison the external-draft candidate view uses.
+    const ghosts = {};
+    procs.forEach(function (base) {
+      const q = eff.find(function (x) { return x.id === base.id; });
+      if (q && (q.start !== base.start || q.end !== base.end)) ghosts[base.id] = { start: base.start, end: base.end };
+    });
+
+    return { procs: eff, ghosts: ghosts, shiftedIds: shiftedIds, shiftDaysById: shiftDaysById };
+  }
+
   // ── canned states for the design canvas ─────────────────────────────────
   function fixtures(kind, state) {
     if (!kind || kind === 'view') return {};
@@ -268,9 +396,9 @@ window.GanttEditData = (function () {
   }
 
   return {
-    load: load, fixtures: fixtures, cascade: cascade, derivePhases: derivePhases,
+    load: load, fixtures: fixtures, cascade: cascade, liveCascade: liveCascade, derivePhases: derivePhases,
     status: status, toMs: toMs, isoFromMs: isoFromMs, fmt: fmt, fmtRange: fmtRange,
     daysBetween: daysBetween, durDays: durDays, addDays: addDays, MONTHS: MONTHS,
-    phaseRank: phaseRank, phaseLabel: phaseLabel,
+    phaseRank: phaseRank, phaseLabel: phaseLabel, handoverEnd: handoverEnd,
   };
 })();
