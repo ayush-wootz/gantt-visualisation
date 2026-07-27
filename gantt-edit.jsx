@@ -31,21 +31,28 @@ var GANTT_CONFIG = {
     const D = useMemo(() => GD.load(), []);
     const fx = useMemo(() => GD.fixtures(forced, D), [forced]);
 
-    const [procs, setProcs] = useState(() => fx.procs || D.procs);
+    // A pending (unapproved) draft loaded from data becomes the EDITABLE base
+    // plan — there's no read-only "review only" screen anymore. The approved
+    // plan is kept aside for the Discard revert and the "vs approved" ghosts.
+    const hasDraft = !!(D.candidateProcs && D.candidateProcs.length);
+    const [procs, setProcs] = useState(() => fx.procs || (hasDraft ? D.candidateProcs : D.procs).map((p) => Object.assign({}, p)));
     const [phases, setPhases] = useState(() => D.phases);
     const [staged, setStaged] = useState(() => fx.staged || {});
-    const [candidate, setCandidate] = useState(() => {
-      if (fx.candidate) return fx.candidate;
-      if (D.candidateProcs && D.candidateProcs.length) {
-        const ghosts = {};
-        D.procs.forEach(function(p) {
-          const q = D.candidateProcs.find(function(x) { return x.id === p.id; });
-          if (q && (q.start !== p.start || q.end !== p.end)) ghosts[p.id] = { start: p.start, end: p.end };
-        });
-        return { procs: D.candidateProcs, editedIds: [], shiftedIds: [], shiftDays: 0, ghosts: ghosts };
-      }
-      return null;
-    });
+    // `candidate` is now ONLY the design-canvas fixture state (?state=…); a real
+    // loaded draft is handled by `pendingDraft` below, keeping it fully editable.
+    const [candidate, setCandidate] = useState(() => fx.candidate || null);
+    const [pendingDraft, setPendingDraft] = useState(hasDraft);
+    // Last approved plan — the Discard revert target and the source of the
+    // one-time ghost bars showing what the draft changed from approved.
+    const approvedRef = useRef(D.procs);
+    const draftGhosts = useMemo(function () {
+      const g = {};
+      if (hasDraft) D.procs.forEach(function (a) {
+        const d = D.candidateProcs.find(function (x) { return x.id === a.id; });
+        if (d && (d.start !== a.start || d.end !== a.end)) g[a.id] = { start: a.start, end: a.end };
+      });
+      return g;
+    }, []);
     const [veil, setVeil] = useState(fx.veil || null);
     const [pop, setPop] = useState(() => fx.pop || null);
     const [drag, setDrag] = useState(() => fx.fakeDrag || null);
@@ -459,11 +466,14 @@ var GANTT_CONFIG = {
         .then(function() { return resultProcs; });
       })
       .then(function(resultProcs) {
-        // Promote straight to live.
+        // Promote straight to live — this is now the approved baseline, and any
+        // pending-draft state is resolved.
         const np = resultProcs.map(function(p) { return Object.assign({}, p); });
+        approvedRef.current = np;
         setProcs(np);
         setPhases(GD.derivePhases(np));
         setCandidate(null);
+        setPendingDraft(false);
         setStaged({});
         setPop(null);
         setVeil(null);
@@ -518,6 +528,48 @@ var GANTT_CONFIG = {
       });
     }
 
+    // ── approveDraft: no-edit approval of a loaded pending draft. `procs`
+    // already holds the draft, so this just commits it live via /approve (the
+    // exact same call the candidate Approve made) and drops the pending state.
+    // An EDITED draft goes through saveAndApprove instead. ─────────────────
+    function approveDraft() {
+      if (veil) return;
+      const meta = D.meta || {};
+      setVeil('Approving plan…');
+      fetch(GANTT_CONFIG.APPROVE_URL, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-schedule-secret': GANTT_CONFIG.SCHEDULE_SECRET,
+        },
+        body: JSON.stringify({
+          assembly_row_id: meta.assembly_row_id || '',
+          assembly_number: meta.assembly_number || '',
+          project_number:  meta.project_number  || '',
+          draft_row_id:    meta.draft_row_id     || '',
+          generated_by:    meta.generated_by     || '',
+        }),
+      })
+      .then(function(res) {
+        if (!res.ok) return res.text().then(function(t) { throw new Error('HTTP ' + res.status + ': ' + t); });
+        return res.json();
+      })
+      .then(function() {
+        const np = procs.map(function(p) { return Object.assign({}, p); });
+        approvedRef.current = np;        // the draft is the approved plan now
+        setPhases(GD.derivePhases(np));
+        setPendingDraft(false);
+        setPop(null);
+        setVeil(null);
+        setToast({ tone: 'ok', text: '✓ Plan approved — changes are now live.' });
+      })
+      .catch(function(err) {
+        setVeil(null);
+        setToast({ tone: 'err', text: 'Approve failed: ' + err.message + ' — try again.' });
+        console.error('approveDraft error:', err);
+      });
+    }
+
     function discard() {
       const meta = D.meta || {};
 
@@ -538,10 +590,17 @@ var GANTT_CONFIG = {
         if (!res.ok) return res.text().then(function(t) { throw new Error('HTTP ' + res.status + ': ' + t); });
       })
       .then(function() {
+        // Draft removed on the server — revert the on-screen plan to the last
+        // approved one and drop the pending/edit state.
+        const np = approvedRef.current.map(function(p) { return Object.assign({}, p); });
+        setProcs(np);
+        setPhases(GD.derivePhases(np));
+        setStaged({});
+        setPendingDraft(false);
         setCandidate(null);
         setPop(null);
         setVeil(null);
-        setToast({ tone: 'warn', text: 'Update discarded — plan unchanged.' });
+        setToast({ tone: 'warn', text: 'Draft discarded — reverted to the last approved plan.' });
       })
       .catch(function(err) {
         setVeil(null);
@@ -671,6 +730,9 @@ var GANTT_CONFIG = {
       // non-edited siblings shifted, tearing a phase apart on a big realign.
       // liveCascaded.ghosts holds the true "before" (last saved) position.
       const liveGhost = !candidate ? liveCascaded.ghosts[p.id] : null;
+      // One-time reference: for a loaded draft, show where this process sat in
+      // the last APPROVED plan — until the user's own edit takes over the ghost.
+      const draftGhost = (pendingDraft && !candidate) ? draftGhosts[p.id] : null;
       const ds = isDrag ? drag.start : p.start;
       const de = isDrag ? drag.end : p.end;
       // A staged reopen (GEPopDone → reopen()) makes the row behave as if
@@ -682,11 +744,12 @@ var GANTT_CONFIG = {
       const rightPct = left + width;
       const barH = effectivelyDone ? Z_BAR_DONE : Z_BAR_H;
       const barY = (row.h - barH) / 2;
-      const edited = isDrag || !!st || !!candGhost || !!liveGhost;
+      const edited = isDrag || !!st || !!candGhost || !!liveGhost || !!draftGhost;
       // During an active drag, the ghost is simply wherever this row was the
       // instant before this gesture (p.start/p.end, i.e. shown's position) —
-      // for anything already committed, it's the true "before" from ghosts.
-      const ghost = isDrag ? { start: p.start, end: p.end } : (candGhost || liveGhost || null);
+      // for anything already committed, it's the true "before" from ghosts;
+      // an untouched draft row falls back to its approved-plan position.
+      const ghost = isDrag ? { start: p.start, end: p.end } : (candGhost || liveGhost || draftGhost || null);
       // A staged mark-complete (st.done) locks the bar immediately, same as an
       // already-completed one — prevents a stray drag from silently discarding
       // the pending completion (commitDates would otherwise overwrite it).
@@ -716,6 +779,10 @@ var GANTT_CONFIG = {
           // Shift can be either direction: +Nd later, −Nd earlier.
           const sd = liveCascaded.shiftDaysById[p.id] || 0;
           extras.push(<span key="lg" className="ge-tag" style={{ left: 'calc(' + rightPct + '% + 6px)', top: row.h / 2 }}>{(sd >= 0 ? '+' : '−') + Math.abs(sd) + 'd'}</span>);
+          badgeRightPx = 56;
+        } else if (draftGhost && !st && !isDrag) {
+          // Untouched draft row whose dates differ from the last approved plan.
+          extras.push(<span key="dg" className="ge-tag" style={{ left: 'calc(' + rightPct + '% + 6px)', top: row.h / 2 }}>CHANGED</span>);
           badgeRightPx = 56;
         }
         // pending completion marker (staged mark-complete)
@@ -867,6 +934,7 @@ var GANTT_CONFIG = {
     }
 
     const candOverN = candidate ? candidate.procs.filter((p) => !p.done && GD.toMs(p.end) > GD.toMs(D.dispatch)).length : 0;
+    const draftN = Object.keys(draftGhosts).length;
 
     const hasInvalid = shown.some((p) => !p.start || !p.end);
     if (hasInvalid) {
@@ -910,6 +978,13 @@ var GANTT_CONFIG = {
                   <window.GEIcon kind="check" size={full ? 13 : 12} sw={2.5}></window.GEIcon> Approve plan
                 </button>
               </React.Fragment>
+            ) : pendingDraft ? (
+              <React.Fragment>
+                <button className="ge-btn" onClick={discard}>Discard</button>
+                <button className="ge-btn solid" onClick={approveDraft}>
+                  <window.GEIcon kind="check" size={full ? 13 : 12} sw={2.5}></window.GEIcon> Approve plan
+                </button>
+              </React.Fragment>
             ) : null}
           </div>
         </div>
@@ -921,6 +996,15 @@ var GANTT_CONFIG = {
               Updated plan — {candidate.editedIds.length} change{candidate.editedIds.length === 1 ? '' : 's'}{candidate.shiftedIds.length > 0 ? ', ' + candidate.shiftedIds.length + ' later step' + (candidate.shiftedIds.length === 1 ? '' : 's') + ' moved' + (candidate.shiftDays ? ' +' + candidate.shiftDays + 'd' : '') : ''}.
               {candOverN > 0 && <b className="warn"> {candOverN} now land{candOverN === 1 ? 's' : ''} past dispatch.</b>}
               {' '}Review the changes, then approve.
+            </span>
+          </div>
+        )}
+
+        {pendingDraft && !candidate && (
+          <div className="ge-banner cand">
+            <window.GEIcon kind="check" size={13} sw={2.5}></window.GEIcon>
+            <span>
+              Pending draft{draftN > 0 ? ' — ' + draftN + ' step' + (draftN === 1 ? '' : 's') + ' changed from the last approved plan' : ''}. Edit if needed, then approve.
             </span>
           </div>
         )}
