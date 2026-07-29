@@ -242,6 +242,8 @@
       .ge-btn.solid{background:#d99e01;border-color:#d99e01;color:rgb(255, 255, 255)}
       .ge-btn.solid:hover{background:#c58502;border-color:#c58502}
       .ge-btn.icon-only{padding:6px 10px}
+      .ge-btn.ghost{background:rgba(255,255,255,.04);border-color:transparent;color:#6b7280}
+      .ge-btn.ghost:hover{background:#262626;border-color:transparent;color:#d4d4d8}
       .ge-actions.big{min-height:38px}
       .ge-actions.big .ge-btn{padding:8px 14px;font-size:13px}
       .ge-actions.big .ge-btn.icon-only{padding:8px 12px}

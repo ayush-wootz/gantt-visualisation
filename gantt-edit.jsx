@@ -963,7 +963,7 @@ var GANTT_CONFIG = {
             <span className="ge-count-lab">{dtd >= 0 ? 'days to dispatch' : 'days past dispatch'}</span>
           </div>
           <div className={'ge-actions' + (full ? ' big' : '')}>
-            <button className="ge-btn icon-only" onClick={toggleFull} title={full ? 'Exit full screen' : 'View full screen'}>
+            <button className="ge-btn icon-only ghost" onClick={toggleFull} title={full ? 'Exit full screen' : 'View full screen'}>
               <window.GEIcon kind={full ? 'minimize' : 'expand'} size={full ? 15 : 13} sw={2.5}></window.GEIcon>
             </button>
             {candidate ? (
