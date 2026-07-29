@@ -232,7 +232,7 @@
   function GEStyles() {
     return (
       <style>{`
-      .ge-root{font-family:ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:#171717;color:#e5e7eb;padding:0;box-sizing:border-box;height:100vh;overflow:hidden;display:flex;flex-direction:column}
+      .ge-root{font-family:ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:#171717;color:#e5e7eb;padding:0;box-sizing:border-box;height:100vh;overflow:hidden;display:flex;flex-direction:column;border-left:1px solid #262626;border-right:1px solid #262626;border-bottom:1px solid #262626}
       .ge-ribbon{position:fixed;bottom:12px;right:14px;z-index:50;font-size:10px;font-weight:700;letter-spacing:1.5px;padding:4px 10px;border-radius:999px;background:rgba(245,158,11,0.15);color:#fde68a;border:1px solid rgba(245,158,11,0.35)}
       .ge-top{position:sticky;top:0;z-index:40;background:#171717;padding:16px 18px;border-bottom:1px solid #262626;display:flex;justify-content:space-between;align-items:center;gap:14px;flex-wrap:wrap;margin-bottom:0}
       .ge-actions{display:flex;gap:8px;align-items:center;min-height:32px;flex-wrap:wrap}
