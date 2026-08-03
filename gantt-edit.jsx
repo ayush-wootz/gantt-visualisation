@@ -442,13 +442,17 @@ var GANTT_CONFIG = {
       .then(function(data) {
         clearInterval(iv);
 
-        // /approve targets the draft via meta.draft_row_id, which Glide bakes
-        // into the page-load payload from the current_draft relation. Keep the
-        // original passthrough: if the response ever surfaces one, use it; else
-        // the loaded relation id stands. (If a first-ever edit ever fails to
-        // approve in Glide because no draft existed at load, that's the spot to
-        // resolve the draft by assembly+owner — mirroring /discard — server-side.)
-        if (data.draft_row_id && D.meta) D.meta.draft_row_id = data.draft_row_id;
+        // /approve targets the draft via meta.draft_row_id, which Glide bakes in
+        // from the current_draft relation at PAGE LOAD — so on the ordinary path
+        // (open a plan with no draft, drag a bar, approve) it is empty and stays
+        // empty: the draft is the one /schedule just created, seconds after the
+        // payload was fixed. /schedule now returns that id, so take it. Guard
+        // D.meta rather than skipping the write when it's absent, which is what
+        // used to leave the id unset and send /approve an empty draft_row_id.
+        if (data.draft_row_id) {
+          if (!D.meta) D.meta = {};
+          D.meta.draft_row_id = data.draft_row_id;
+        }
 
         // Parse updated processes from response gantt_json
         let newProcs = null;
