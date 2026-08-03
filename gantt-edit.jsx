@@ -14,7 +14,10 @@
 var GANTT_CONFIG = {
   SCHEDULE_URL:    'https://gantt-visualisation-dev.onrender.com/schedule',
   SCHEDULE_SECRET: 'ayush_Wootz_2026',
-  APPROVE_URL:     'https://glide-gantt-ai-scheduler.onrender.com/approve',
+  // Same host as SCHEDULE_URL/DISCARD_URL. This used to point at the separate
+  // glide-gantt-ai-scheduler service, which is a much older deployment of the
+  // same app — so approve ran against code that /schedule had long moved past.
+  APPROVE_URL:     'https://gantt-visualisation-dev.onrender.com/approve',
   DISCARD_URL:     'https://gantt-visualisation-dev.onrender.com/discard',
 };
 
