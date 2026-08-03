@@ -681,7 +681,7 @@ var GANTT_CONFIG = {
       if (d.type === 'm') { s = GD.addDays(d.s0, dd); e = GD.addDays(d.e0, dd); }
       else if (d.type === 'l') { s = GD.addDays(d.s0, dd); if (GD.toMs(s) > GD.toMs(e)) s = e; }
       else { e = GD.addDays(d.e0, dd); if (GD.toMs(e) < GD.toMs(s)) e = s; }
-      let wall = null;
+      let wall = null, clamped = false;
       if (d.p.phase > 1) {
         wall = prevPhaseEnd(d.p.phase - 1);
         if (wall) {
@@ -693,11 +693,17 @@ var GANTT_CONFIG = {
           const floor = GD.toMs(wall) <= GD.toMs(d.s0) ? wall : d.s0;
           if (GD.toMs(s) < GD.toMs(floor)) {
             s = floor;
+            // Only a start actually pushed back to the REAL phase wall counts as
+            // "clamped" (drives the tooltip's "can't go earlier" message).
+            // Resizing the END forward never moves the start, so it never trips
+            // this — a phase's first process (start == wall) now shows its dates
+            // while resizing, like every other process.
+            clamped = GD.toMs(floor) === GD.toMs(wall);
             if (d.type === 'm') e = GD.addDays(s, dur);
           }
         }
       }
-      return { s, e, wall };
+      return { s, e, wall, clamped };
     }
     function startDrag(ev, p) {
       // Every fresh gesture clears any stale click-guard up front, so a guard
@@ -709,14 +715,13 @@ var GANTT_CONFIG = {
       // already-approved completion does — Clear completion is the way back.
       if ((p.done && !st.reopened) || st.done || candidate || veil) return;
       setPop(null);
-      const r = ev.currentTarget.getBoundingClientRect();
-      const off = ev.clientX - r.left;
-      // Edge zones scale with bar width (capped at 12px) so a narrow ~1-day bar
-      // still keeps a real center "move" zone — a fixed 12px edge on both sides
-      // used to swallow a short bar entirely, forcing every grab into a resize
-      // and making such bars effectively un-draggable.
-      const edge = Math.max(3, Math.min(12, r.width * 0.25));
-      const type = off < edge ? 'l' : off > r.width - edge ? 'r' : 'm';
+      // Resize vs move is decided by WHICH element you grabbed, not by how near
+      // an edge you pressed. The resize grips sit just OUTSIDE the bar edges and
+      // carry data-resize ('l'/'r'); pressing the bar body itself is always a
+      // move. This removes the old edge-zone overlap that turned a move into a
+      // resize on short bars (a same start/end day had no real move zone at all).
+      const rs = ev.target && ev.target.getAttribute ? ev.target.getAttribute('data-resize') : null;
+      const type = (rs === 'l' || rs === 'r') ? rs : 'm';
       // s0/e0 are the row's current on-screen (cascaded) dates — same p.start/
       // p.end the bar renders at — so the drag starts exactly under the cursor.
       dragRef.current = { id: p.id, p, type, x0: ev.clientX, s0: p.start, e0: p.end, moved: false };
@@ -734,7 +739,7 @@ var GANTT_CONFIG = {
       if (Math.abs(ev.clientX - d.x0) > 4) d.moved = true;
       if (!d.moved) return;
       const r = calcDrag(d, ev.clientX);
-      setDrag({ id: d.id, start: r.s, end: r.e, out: outOf(d.p, r.s, r.e), wall: r.wall });
+      setDrag({ id: d.id, start: r.s, end: r.e, out: outOf(d.p, r.s, r.e), wall: r.wall, clamped: r.clamped });
     }
     function endDrag(ev) {
       const d = dragRef.current;
@@ -915,10 +920,10 @@ var GANTT_CONFIG = {
           onClick={(e) => barClick(e, p)}
           title={GD.fmtRange(ds, de) + ' · ' + GD.durDays(ds, de) + 'd'}>
           {editable && <div className="ge-frame" style={{ top: 7, height: barH }}></div>}
-          {editable && <div className="ge-handle l"></div>}
-          {editable && <div className="ge-handle r"></div>}
+          {editable && <div className="ge-handle l" data-resize="l"></div>}
+          {editable && <div className="ge-handle r" data-resize="r"></div>}
           {editable && <div className="ge-grip"><i></i><i></i><i></i><i></i><i></i><i></i></div>}
-          {editable && <div className="ge-draghint">drag to move · edges resize</div>}
+          {editable && <div className="ge-draghint">drag to move · side grips resize</div>}
         </div>
       );
 
@@ -938,7 +943,7 @@ var GANTT_CONFIG = {
     if (dProc) {
       const row = layout.find((r) => r.kind === 'proc' && r.p.id === drag.id);
       if (row) {
-        const clamped = drag.wall && GD.toMs(drag.start) <= GD.toMs(drag.wall);
+        const clamped = !!drag.clamped;
         tip = (
           <div className="ge-tip" style={{ left: pct(drag.start) + '%', top: row.y - 4 }}>
             {clamped

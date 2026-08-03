@@ -286,9 +286,12 @@
       .ge-frame{position:absolute;left:0;right:0;border-radius:5px;pointer-events:none;background:transparent;box-shadow:none;transition:box-shadow .12s,background .12s}
       .ge-hit.ge-editable:hover .ge-frame,.ge-hit.ge-editable:active .ge-frame{background:rgba(245,158,11,.08);box-shadow:inset 0 0 0 1.5px #fbbf24}
       /* edge resize handles: brighter amber brackets with a soft halo */
-      .ge-handle{position:absolute;top:50%;transform:translateY(-50%);width:4px;height:16px;border-radius:2px;background:#fbbf24;box-shadow:0 0 0 3px rgba(245,158,11,.18);opacity:0;transition:opacity .12s;cursor:col-resize}
+      /* resize grips sit just OUTSIDE the bar edges so they never overlap the
+         move (body) zone — a same start/end bar still has a full-width move
+         target with its own resize grips flanking it */
+      .ge-handle{position:absolute;top:50%;transform:translateY(-50%);width:7px;height:18px;border-radius:3px;background:#fbbf24;box-shadow:0 0 0 2px rgba(245,158,11,.22);opacity:0;transition:opacity .12s;cursor:col-resize;z-index:6;touch-action:none}
       .ge-hit.ge-editable:hover .ge-handle,.ge-hit.ge-editable:active .ge-handle{opacity:1}
-      .ge-handle.l{left:3px}.ge-handle.r{right:3px}
+      .ge-handle.l{left:-7px}.ge-handle.r{right:-7px}
       /* center move grip: 2×3 dots signalling "grab to move" */
       .ge-grip{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);display:grid;grid-template-columns:2px 2px;gap:2px;opacity:0;transition:opacity .12s;pointer-events:none}
       .ge-hit.ge-editable:hover .ge-grip{opacity:.85}
