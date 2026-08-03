@@ -442,6 +442,17 @@ var GANTT_CONFIG = {
       .then(function(data) {
         clearInterval(iv);
 
+        // /schedule answers HTTP 200 even when it REJECTED the plan — a failed
+        // validation comes back as success:false with the reason in `summary`,
+        // and no draft row is written. A bare res.ok check therefore marched on
+        // to /approve against a draft that does not exist, which surfaced as a
+        // baffling "missing draft_row_id" instead of the actual problem. Stop
+        // here and show what the scheduler actually said.
+        if (data && data.success === false) {
+          throw new Error(chatProse(data.summary || data.message)
+            || 'The scheduler could not apply this change. Try adjusting the dates.');
+        }
+
         // /approve targets the draft via meta.draft_row_id, which Glide bakes in
         // from the current_draft relation at PAGE LOAD — so on the ordinary path
         // (open a plan with no draft, drag a bar, approve) it is empty and stays
