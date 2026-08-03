@@ -72,11 +72,15 @@ var GANTT_CONFIG = {
     const [pop, setPop] = useState(() => fx.pop || null);
     const [drag, setDrag] = useState(() => fx.fakeDrag || null);
     const [toast, setToast] = useState(() => fx.toast || null);
-    // Last chat message shown in the footer. Seeded from the page-load payload
-    // (meta.last_message — Glide passes the newest "approval" row for this
-    // assembly) and refreshed in-place from /approve's response, since the baked
-    // payload can't update itself while the embed is open.
-    const [lastMsg, setLastMsg] = useState(() => chatProse((D.meta || {}).last_message));
+    // Last approval note shown in the footer. Seeded from the page-load payload
+    // (meta.last_approved_message — Glide mirrors the assembly's "Gantt /Last
+    // approved message" column into it) and refreshed in-place from /approve's
+    // response, since the baked payload can't update itself while the embed is
+    // open. last_message is accepted too, in case an older payload is in flight.
+    const [lastMsg, setLastMsg] = useState(() => {
+      const m = D.meta || {};
+      return chatProse(m.last_approved_message || m.last_message);
+    });
     const [msgOpen, setMsgOpen] = useState(false);
     const [msgClipped, setMsgClipped] = useState(false);
     const msgRef = useRef(null);
