@@ -332,6 +332,14 @@
       .ge-spin{width:22px;height:22px;border:2px solid rgba(245,158,11,.20);border-top-color:#f59e0b;border-radius:50%;animation:gesp .7s linear infinite}
       @keyframes gesp{to{transform:rotate(360deg)}}
       .ge-foot{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-top:10px;padding:0 18px 14px;font-size:11.5px;color:#8b8b93;min-height:22px}
+      /* last chat message: one clamped line by default, click to grow to 3.
+         padding-right reserves the strip the Glide Chat button sits over, so
+         the text can never slide underneath it. */
+      .ge-msg{flex:1 1 auto;min-width:0;line-height:1.45;padding-right:var(--ge-chat-gap,130px);
+              display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:1;overflow:hidden}
+      .ge-msg.exp{-webkit-line-clamp:3}
+      .ge-msg.can{cursor:pointer}
+      .ge-msg.can:hover{color:#a1a1aa}
       .ge-toast.ok{color:#6ee7b7}
       .ge-toast.warn{color:#fcd34d}
       .ge-toast.info{color:#fde68a}

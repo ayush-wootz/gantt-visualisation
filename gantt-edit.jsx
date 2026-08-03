@@ -24,6 +24,21 @@ var GANTT_CONFIG = {
   const ROW_H = 34, ROW_DONE = 22, PHASE_H = 26, BAR_H = 22, BAR_DONE = 8;
   const TOP = 56, GROUP_GAP = 8, BOT = 16;
   const MAX_ZOOM = 1.7;
+  // How long a toast holds the footer line before it falls back to the last
+  // chat message. Errors linger longer — they're the ones worth reading twice.
+  const TOAST_MS = 6000, TOAST_ERR_MS = 12000;
+
+  // The chat message as stored carries machine-readable tails the thread view
+  // parses into its own UI ("Changes since approved:" rows, "AI warnings:").
+  // The footer wants only the prose the AI wrote, so strip them the same way
+  // thread.html does. Safe on text that has neither.
+  function chatProse(text) {
+    let s = String(text == null ? '' : text).replace(/\\n/g, '\n').replace(/^\[DRAFT\]\s*/, '').trim();
+    s = s.split(/\nChanges since approved:\s*/)[0];
+    s = s.split(/\nAI warnings:\s*/)[0];
+    s = s.split(/\nRecommendations:\s*/)[0];
+    return s.trim();
+  }
 
   function GanttEdit({ forced, embed }) {
     const GD = window.GanttEditData;
@@ -57,6 +72,14 @@ var GANTT_CONFIG = {
     const [pop, setPop] = useState(() => fx.pop || null);
     const [drag, setDrag] = useState(() => fx.fakeDrag || null);
     const [toast, setToast] = useState(() => fx.toast || null);
+    // Last chat message shown in the footer. Seeded from the page-load payload
+    // (meta.last_message — Glide passes the newest "approval" row for this
+    // assembly) and refreshed in-place from /approve's response, since the baked
+    // payload can't update itself while the embed is open.
+    const [lastMsg, setLastMsg] = useState(() => chatProse((D.meta || {}).last_message));
+    const [msgOpen, setMsgOpen] = useState(false);
+    const [msgClipped, setMsgClipped] = useState(false);
+    const msgRef = useRef(null);
     const [cardW, setCardW] = useState(1200);
     const [cardH, setCardH] = useState(null); // null until measured — keeps zoom at 1x till then
     const [full, setFull] = useState(false);
@@ -81,6 +104,30 @@ var GANTT_CONFIG = {
       return () => ro.disconnect();
     }, []);
     useEffect(() => () => { timersRef.current.forEach((t) => { clearTimeout(t); clearInterval(t); }); }, []);
+
+    // Toasts used to be permanent, which was fine when the footer had nothing
+    // else to say. Now they'd bury the last chat message for the rest of the
+    // session, so they expire and hand the line back. Skipped for the design
+    // canvas (?state=…), whose canned toasts are the point of the fixture.
+    useEffect(() => {
+      if (!toast || forced) return;
+      const t = setTimeout(() => setToast(null), toast.tone === 'err' ? TOAST_ERR_MS : TOAST_MS);
+      return () => clearTimeout(t);
+    }, [toast, forced]);
+
+    // A new message always arrives collapsed.
+    useEffect(() => { setMsgOpen(false); }, [lastMsg]);
+
+    // Does the message overflow its one clamped line? Only then is the
+    // click-to-expand affordance worth showing. Re-measured on width changes.
+    // Skipped while expanded — the expanded box may well fit, and re-measuring
+    // there would drop the affordance the user needs to collapse it again.
+    useEffect(() => {
+      if (msgOpen) return;
+      const el = msgRef.current;
+      if (!el) { setMsgClipped(false); return; }
+      setMsgClipped(el.scrollHeight > el.clientHeight + 1);
+    }, [lastMsg, cardW, toast, msgOpen, candidate]);
 
     // ── fullscreen (View Full) — real Fullscreen API, not a CSS trick, so it
     // can escape the small iframe box Glide's Web Embed gives us ────────────
@@ -463,7 +510,11 @@ var GANTT_CONFIG = {
           if (!res.ok) return res.text().then(function(t) { throw new Error('HTTP ' + res.status + ': ' + t); });
           return res.json();
         })
-        .then(function() { return resultProcs; });
+        .then(function(aj) {
+          const m = chatProse(aj && aj.approval_summary);
+          if (m) setLastMsg(m);
+          return resultProcs;
+        });
       })
       .then(function(resultProcs) {
         // Promote straight to live — this is now the approved baseline, and any
@@ -512,7 +563,9 @@ var GANTT_CONFIG = {
         if (!res.ok) return res.text().then(function(t) { throw new Error('HTTP ' + res.status + ': ' + t); });
         return res.json();
       })
-      .then(function() {
+      .then(function(aj) {
+        const m = chatProse(aj && aj.approval_summary);
+        if (m) setLastMsg(m);
         const np = candidate.procs.map(function(p) { return Object.assign({}, p); });
         setProcs(np);
         setPhases(GD.derivePhases(np));
@@ -554,7 +607,9 @@ var GANTT_CONFIG = {
         if (!res.ok) return res.text().then(function(t) { throw new Error('HTTP ' + res.status + ': ' + t); });
         return res.json();
       })
-      .then(function() {
+      .then(function(aj) {
+        const m = chatProse(aj && aj.approval_summary);
+        if (m) setLastMsg(m);
         const np = procs.map(function(p) { return Object.assign({}, p); });
         approvedRef.current = np;        // the draft is the approved plan now
         setPhases(GD.derivePhases(np));
@@ -1053,12 +1108,25 @@ var GANTT_CONFIG = {
           )}
         </div>
 
+        {/* Footer line, in priority order: a transient toast from the action you
+            just took, then the review hint while a candidate is on screen (it
+            beats a stale approval note there), then the last chat message, then
+            the interaction hint it replaces. */}
         <div className="ge-foot">
-          {toast
-            ? <span className={'ge-toast ' + toast.tone}>{toast.text}</span>
-            : <span>{candidate
-                ? 'Click any bar to see what changed.'
-                : 'Drag a bar to move it · drag an edge to resize · click a bar for exact dates or to mark complete.'}</span>}
+          {toast ? (
+            <span className={'ge-toast ' + toast.tone}>{toast.text}</span>
+          ) : candidate ? (
+            <span>Click any bar to see what changed.</span>
+          ) : lastMsg ? (
+            <span
+              ref={msgRef}
+              className={'ge-msg' + (msgOpen ? ' exp' : '') + (msgClipped ? ' can' : '')}
+              onClick={msgClipped ? () => setMsgOpen(!msgOpen) : undefined}
+              title={msgClipped && !msgOpen ? 'Show full message' : undefined}
+            >{lastMsg}</span>
+          ) : (
+            <span>Drag a bar to move it · drag an edge to resize · click a bar for exact dates or to mark complete.</span>
+          )}
         </div>
       </div>
     );
