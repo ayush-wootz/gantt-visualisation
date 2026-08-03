@@ -24,9 +24,6 @@ var GANTT_CONFIG = {
   const ROW_H = 34, ROW_DONE = 22, PHASE_H = 26, BAR_H = 22, BAR_DONE = 8;
   const TOP = 56, GROUP_GAP = 8, BOT = 16;
   const MAX_ZOOM = 1.7;
-  // How long a toast holds the footer line before it falls back to the last
-  // chat message. Errors linger longer — they're the ones worth reading twice.
-  const TOAST_MS = 6000, TOAST_ERR_MS = 12000;
 
   // The chat message as stored carries machine-readable tails the thread view
   // parses into its own UI ("Changes since approved:" rows, "AI warnings:").
@@ -109,15 +106,10 @@ var GANTT_CONFIG = {
     }, []);
     useEffect(() => () => { timersRef.current.forEach((t) => { clearTimeout(t); clearInterval(t); }); }, []);
 
-    // Toasts used to be permanent, which was fine when the footer had nothing
-    // else to say. Now they'd bury the last chat message for the rest of the
-    // session, so they expire and hand the line back. Skipped for the design
-    // canvas (?state=…), whose canned toasts are the point of the fixture.
-    useEffect(() => {
-      if (!toast || forced) return;
-      const t = setTimeout(() => setToast(null), toast.tone === 'err' ? TOAST_ERR_MS : TOAST_MS);
-      return () => clearTimeout(t);
-    }, [toast, forced]);
+    // Toasts are deliberately NOT on a timer. An approve error is the one thing
+    // in this footer you most need time to read, and a countdown was taking it
+    // away mid-sentence. A toast holds the line until the next action replaces
+    // it; a successful approve clears it outright so the new note shows through.
 
     // A new message always arrives collapsed.
     useEffect(() => { setMsgOpen(false); }, [lastMsg]);
@@ -394,6 +386,9 @@ var GANTT_CONFIG = {
     function saveAndApprove(stagedMap) {
       if (veil) return; // already saving/approving — ignore repeat clicks
       setPop(null); setDrag(null);
+      // Filled in when /approve hands back the note it just wrote. If we got
+      // one, it — not a generic "approved" toast — is what the footer shows.
+      let approvedMsg = '';
 
       const msgs = [
         'Saving changes\u2026',
@@ -515,8 +510,8 @@ var GANTT_CONFIG = {
           return res.json();
         })
         .then(function(aj) {
-          const m = chatProse(aj && aj.approval_summary);
-          if (m) setLastMsg(m);
+          approvedMsg = chatProse(aj && aj.approval_summary);
+          if (approvedMsg) setLastMsg(approvedMsg);
           return resultProcs;
         });
       })
@@ -532,7 +527,9 @@ var GANTT_CONFIG = {
         setStaged({});
         setPop(null);
         setVeil(null);
-        setToast({ tone: 'ok', text: '✓ Plan approved — changes are now live.' });
+        // Clearing the toast lets the note we just stored show through; only
+        // fall back to the generic line when there was no note to show.
+        setToast(approvedMsg ? null : { tone: 'ok', text: '✓ Plan approved — changes are now live.' });
       })
       .catch(function(err) {
         clearInterval(iv);
@@ -576,7 +573,7 @@ var GANTT_CONFIG = {
         setCandidate(null);
         setPop(null);
         setVeil(null);
-        setToast({ tone: 'ok', text: '\u2713 Plan approved — changes are now live.' });
+        setToast(m ? null : { tone: 'ok', text: '\u2713 Plan approved — changes are now live.' });
       })
       .catch(function(err) {
         setVeil(null);
@@ -620,7 +617,7 @@ var GANTT_CONFIG = {
         setPendingDraft(false);
         setPop(null);
         setVeil(null);
-        setToast({ tone: 'ok', text: '✓ Plan approved — changes are now live.' });
+        setToast(m ? null : { tone: 'ok', text: '✓ Plan approved — changes are now live.' });
       })
       .catch(function(err) {
         setVeil(null);
