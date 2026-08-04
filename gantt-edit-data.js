@@ -33,6 +33,17 @@ window.GanttEditData = (function () {
     // numeric or anything else → "PHASE n"
     return 'PHASE ' + s;
   }
+  // Human-readable phase reference for inline sentences ("Phase 3", "PRE-FINAL",
+  // "FINAL") — never the raw internal sort rank (p.phase). phaseRank() maps
+  // Pre-final/Final to 9998/9999 so they always sort after numbered phases;
+  // interpolating p.phase straight into a message showed that raw rank number
+  // instead of the phase's name. Numbered phases render byte-identical to the
+  // old "Phase " + p.phase text.
+  function phasePhrase(p) {
+    const label = p && p.phaseLabel;
+    if (label && !/^PHASE\s/i.test(label)) return label;
+    return 'Phase ' + ((label && label.replace(/^PHASE\s+/i, '')) || (p ? p.phase : ''));
+  }
 
   // ── demo plan (deterministic: today is pinned) ──────────────────────────
   const TODAY_DEFAULT = '2026-06-22';
@@ -399,6 +410,6 @@ window.GanttEditData = (function () {
     load: load, fixtures: fixtures, cascade: cascade, liveCascade: liveCascade, derivePhases: derivePhases,
     status: status, toMs: toMs, isoFromMs: isoFromMs, fmt: fmt, fmtRange: fmtRange,
     daysBetween: daysBetween, durDays: durDays, addDays: addDays, MONTHS: MONTHS,
-    phaseRank: phaseRank, phaseLabel: phaseLabel, handoverEnd: handoverEnd,
+    phaseRank: phaseRank, phaseLabel: phaseLabel, phasePhrase: phasePhrase, handoverEnd: handoverEnd,
   };
 })();

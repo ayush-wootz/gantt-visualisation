@@ -61,7 +61,7 @@
       const early = GD.toMs(v) < GD.toMs(p.end);
       return { tone: 'ok', text: 'Finished ' + (early ? 'earlier than planned' : 'a little later than planned') + ' (planned ' + GD.fmt(p.end) + ') — staged, applies on approve.' };
     }
-    return { tone: 'info', text: 'Finishes past the Phase ' + p.phase + ' plan — later steps reschedule when you approve.' };
+    return { tone: 'info', text: 'Finishes past the ' + GD.phasePhrase(p) + ' plan — later steps reschedule when you approve.' };
   }
 
   // ── popover: view mode, incomplete (LEGACY — no longer used, see GEPopEditFull)
@@ -337,12 +337,17 @@
       .ge-foot{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-top:10px;padding:0 18px 14px;font-size:11.5px;color:#8b8b93;min-height:22px}
       /* last chat message: one clamped line by default, click to grow to 3.
          padding-right reserves the strip the Glide Chat button sits over, so
-         the text can never slide underneath it. */
-      .ge-msg{flex:1 1 auto;min-width:0;line-height:1.45;padding-right:var(--ge-chat-gap,130px);
+         the text can never slide underneath it. The toggle icon lives OUTSIDE
+         the clamped text (its own flex item) so it's never swallowed by the
+         line-clamp ellipsis and never collides with that reserved strip. */
+      .ge-msg{flex:1 1 auto;min-width:0;display:flex;align-items:flex-start;gap:3px;padding-right:var(--ge-chat-gap,105px)}
+      .ge-msg-text{flex:1 1 auto;min-width:0;line-height:1.45;
               display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:1;overflow:hidden}
-      .ge-msg.exp{-webkit-line-clamp:3}
-      .ge-msg.can{cursor:pointer}
-      .ge-msg.can:hover{color:#a1a1aa}
+      .ge-msg-text.exp{-webkit-line-clamp:3}
+      .ge-msg-text.can{cursor:pointer}
+      .ge-msg-text.can:hover{color:#a1a1aa}
+      .ge-msg-toggle{flex:none;cursor:pointer;color:#6b7280;font-size:8px;line-height:1.6;padding:0 2px}
+      .ge-msg-toggle:hover{color:#d4d4d8}
       .ge-toast.ok{color:#6ee7b7}
       .ge-toast.warn{color:#fcd34d}
       .ge-toast.info{color:#fde68a}

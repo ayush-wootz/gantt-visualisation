@@ -315,7 +315,7 @@ var GANTT_CONFIG = {
         return Object.assign({}, prev, { [p.id]: entry });
       });
       const ext = outOf(p, s, e);
-      setToast({ tone: ext ? 'info' : 'ok', text: p.name + ' \u2192 ' + GD.fmtRange(s, e) + (ext ? ' \u00b7 extends Phase ' + p.phase + ' \u2014 later steps shifted to fit; approve to apply.' : ' \u00b7 approve to apply.') });
+      setToast({ tone: ext ? 'info' : 'ok', text: p.name + ' \u2192 ' + GD.fmtRange(s, e) + (ext ? ' \u00b7 extends ' + GD.phasePhrase(p) + ' \u2014 later steps shifted to fit; approve to apply.' : ' \u00b7 approve to apply.') });
     }
     function clearStaged(id) {
       setStaged((prev) => { const n = Object.assign({}, prev); delete n[id]; return n; });
@@ -967,7 +967,7 @@ var GANTT_CONFIG = {
           <div className="ge-tip" style={{ left: pct(drag.start) + '%', top: row.y - 4 }}>
             {clamped
               ? <span>Can't go earlier · <span className="ext">Phase {dProc.phase - 1} ends {GD.fmt(drag.wall)}</span></span>
-              : <span>{GD.fmtRange(drag.start, drag.end)} · {GD.durDays(drag.start, drag.end)}d{drag.out ? <span className="ext"> · extends Phase {dProc.phase}</span> : null}</span>}
+              : <span>{GD.fmtRange(drag.start, drag.end)} · {GD.durDays(drag.start, drag.end)}d{drag.out ? <span className="ext"> · extends {GD.phasePhrase(dProc)}</span> : null}</span>}
           </div>
         );
       }
@@ -1142,12 +1142,21 @@ var GANTT_CONFIG = {
           ) : candidate ? (
             <span>Click any bar to see what changed.</span>
           ) : lastMsg ? (
-            <span
-              ref={msgRef}
-              className={'ge-msg' + (msgOpen ? ' exp' : '') + (msgClipped ? ' can' : '')}
-              onClick={msgClipped ? () => setMsgOpen(!msgOpen) : undefined}
-              title={msgClipped && !msgOpen ? 'Show full message' : undefined}
-            >{lastMsg}</span>
+            <span className="ge-msg">
+              <span
+                ref={msgRef}
+                className={'ge-msg-text' + (msgOpen ? ' exp' : '') + (msgClipped ? ' can' : '')}
+                onClick={msgClipped ? () => setMsgOpen(!msgOpen) : undefined}
+                title={msgClipped && !msgOpen ? 'Show full message' : undefined}
+              >{lastMsg}</span>
+              {msgClipped && (
+                <span
+                  className="ge-msg-toggle"
+                  onClick={() => setMsgOpen(!msgOpen)}
+                  title={msgOpen ? 'Show less' : 'Show full message'}
+                >{msgOpen ? '▲' : '▼'}</span>
+              )}
+            </span>
           ) : (
             <span>Drag a bar to move it · drag an edge to resize · click a bar for exact dates or to mark complete.</span>
           )}
