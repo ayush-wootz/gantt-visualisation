@@ -66,11 +66,11 @@ body{display:flex;flex-direction:column;overflow:hidden}
 
   // ── config ─────────────────────────────────────────────────────────────────
   var CONFIG={
-    // Must match gantt-edit.jsx's GANTT_CONFIG. This pointed at the separate
-    // glide-gantt-ai-scheduler service, a much older deployment of the same
-    // app, so a regeneration asked for from the chat ran against different
-    // code than the same regeneration asked for from the Gantt.
-    SCHEDULE_URL:'https://gantt-visualisation-dev.onrender.com/schedule',
+    // PRODUCTION endpoint — must match gantt-edit.jsx's GANTT_CONFIG on this
+    // branch. A regeneration asked for from the chat and the same one asked for
+    // from the Gantt must run against identical code, so these two files always
+    // move together. (`dev` points this at gantt-visualisation-dev instead.)
+    SCHEDULE_URL:'https://glide-gantt-ai-scheduler.onrender.com/schedule',
     SCHEDULE_SECRET:'ayush_Wootz_2026'
   };
 

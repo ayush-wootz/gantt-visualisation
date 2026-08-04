@@ -11,14 +11,19 @@
 //   existing draft) still shows ghost bars + Discard / Approve for review.
 
 // ── CONFIG — set your endpoints here ──────────────────────────────────────
+// PRODUCTION endpoints. This is the `main` branch, which is served to real
+// users, so every endpoint points at the production backend service (deployed
+// from the backend repo's `main`). The `dev` branch points these same three at
+// gantt-visualisation-dev.onrender.com instead — that difference is the ONLY
+// intended divergence between the branches, so expect a conflict here on every
+// dev -> main merge and always resolve it in favour of these hosts.
+// All three must stay on the SAME host: they're one flow (schedule -> approve),
+// and pointing them at services running different code silently breaks approve.
 var GANTT_CONFIG = {
-  SCHEDULE_URL:    'https://gantt-visualisation-dev.onrender.com/schedule',
+  SCHEDULE_URL:    'https://glide-gantt-ai-scheduler.onrender.com/schedule',
   SCHEDULE_SECRET: 'ayush_Wootz_2026',
-  // Same host as SCHEDULE_URL/DISCARD_URL. This used to point at the separate
-  // glide-gantt-ai-scheduler service, which is a much older deployment of the
-  // same app — so approve ran against code that /schedule had long moved past.
-  APPROVE_URL:     'https://gantt-visualisation-dev.onrender.com/approve',
-  DISCARD_URL:     'https://gantt-visualisation-dev.onrender.com/discard',
+  APPROVE_URL:     'https://glide-gantt-ai-scheduler.onrender.com/approve',
+  DISCARD_URL:     'https://glide-gantt-ai-scheduler.onrender.com/discard',
 };
 
 (function () {
